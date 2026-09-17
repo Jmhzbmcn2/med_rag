@@ -148,9 +148,21 @@ passage).
   cross-section overlap or answer-aware chunking, disproportionate to the
   benefit for a first version. Revisit only if retrieval eval on the real
   question set shows this class of miss matters in practice.
-- Guard-rail split (0.8–3.4% of chunks) uses generic paragraph/sentence
-  boundaries, not markdown-aware — acceptable because it's rare and still
-  respects paragraph boundaries first.
+- Guard-rail split uses generic paragraph/sentence boundaries, not
+  markdown-aware — acceptable because it still respects paragraph
+  boundaries first. **Correction from implementation** (this spec's
+  original 0.8–3.4% guard-rail-trigger estimate was measured with a
+  word-count proxy for token length, during brainstorming, before the
+  real `dangvantuan/vietnamese-embedding` tokenizer was wired in): the
+  real tokenizer counts meaningfully more tokens per Vietnamese section
+  than word-count suggested, so the real per-type guard-rail-trigger rate
+  at the 400-token cap is higher — disease 5.3%, medicine 2.2%, drug 1.4%,
+  body-part 3.0%, measured directly against all 584 files with the real
+  tokenizer. Each guard-rail split is an additional place a `context` span
+  can end up straddling two chunks, on top of the cross-section case
+  above — this is why the Validation baselines below are measured against
+  the actual shipped pipeline rather than the idealized uncapped-section
+  numbers this spec originally cited.
 
 ## Validation
 
@@ -160,10 +172,18 @@ passage).
 least one chunk's body from the same article. Prints hit-rate per type and
 asserts:
 - hit-rate per type stays at or above the measured baseline minus a small
-  margin (disease 88.8%, medicine 91.9%, drug 90.9%, body-part 86.4%; using
+  margin (disease 81.9%, medicine 87.3%, drug 89.9%, body-part 81.8%; using
   −3pp as the regression margin) — catches future edits to the chunker
-  that quietly break section boundaries.
-- every emitted chunk's `token_count <= 400`.
+  that quietly break section boundaries. These are the real rates measured
+  against the actual `chunk_article` pipeline (400-token cap, real
+  tokenizer, `_HEADER_BUDGET_SAFETY_MARGIN=30`) — see the corrected note
+  under Known Limitations for why they're lower than this spec's original
+  brainstorming-stage estimate.
+- every emitted chunk's `token_count <= 400` (verified: 0 violations across
+  all 584 files once `_HEADER_BUDGET_SAFETY_MARGIN` was raised from the
+  originally-specified `10` to `30` — the smaller margin left 8 chunks
+  3–8 tokens over cap due to tokenizer non-additivity across the
+  header+body concatenation boundary).
 - no chunk has empty `text`.
 - no duplicate `id`.
 

@@ -362,7 +362,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from typing import Callable
 
 _SEPARATORS = ["\n\n", "\n", ". ", " ", ""]
-_HEADER_BUDGET_SAFETY_MARGIN = 10  # tokenizers aren't perfectly additive across concatenation
+_HEADER_BUDGET_SAFETY_MARGIN = 30  # tokenizers aren't perfectly additive across concatenation — 10 measured insufficient (8 chunks 3-8 tokens over cap on real data), raised during Task 6
 
 
 def guard_rail_split(
@@ -576,11 +576,11 @@ from transformers import AutoTokenizer
 from chunking import chunk_article, iter_articles
 
 MAX_TOKENS = 400
-BASELINE_HIT_RATE = {
-    "disease": 0.888,
-    "medicine": 0.919,
-    "drug": 0.909,
-    "body-part": 0.864,
+BASELINE_HIT_RATE = {  # corrected during Task 6: original brainstorming-stage
+    "disease": 0.819,   # numbers (0.888/0.919/0.909/0.864) were measured against
+    "medicine": 0.873,  # uncapped raw sections, not the real 400-token-capped
+    "drug": 0.899,       # pipeline with the real tokenizer — see spec's Known
+    "body-part": 0.818,  # Limitations section for the corrected measurement.
 }
 REGRESSION_MARGIN = 0.03
 
