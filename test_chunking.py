@@ -1,4 +1,4 @@
-from chunking import parse_article, split_sections, inject_context_header, guard_rail_split
+from chunking import parse_article, split_sections, inject_context_header, guard_rail_split, chunk_article
 
 
 def test_parse_article_strips_metadata_lines():
@@ -118,3 +118,48 @@ def test_guard_rail_split_passes_short_and_splits_long():
         assert f"(phần {i}/{len(b_results)})" in r["text"]
         assert _word_count(r["text"]) <= 15
         assert r["token_count"] == _word_count(r["text"])
+
+
+def test_chunk_article_end_to_end_and_deterministic_ids():
+    text = (
+        "# SOURCE_URL: https://youmed.vn/tin-tuc/thuoc-x/\n"
+        "\n"
+        "# Thuốc X là gì?\n"
+        "\n"
+        "Nội dung bài viết\n"
+        "\n"
+        "**Đoạn giới thiệu về thuốc X.**\n"
+        "\n"
+        "## Công dụng\n"
+        "\n"
+        "Thuốc X dùng để giảm đau.\n"
+        "\n"
+        "## Cách dùng\n"
+        "\n"
+        "Uống 1 viên mỗi ngày.\n"
+    )
+
+    chunks = chunk_article(
+        text, article_type="drug", article_slug="thuoc-x",
+        token_counter=_word_count, max_tokens=1000,
+    )
+
+    assert len(chunks) == 3  # intro, Cong dung, Cach dung
+    for chunk in chunks:
+        assert chunk["type"] == "drug"
+        assert chunk["article_slug"] == "thuoc-x"
+        assert chunk["article_title"] == "Thuốc X là gì?"
+        assert chunk["article_url"] == "https://youmed.vn/tin-tuc/thuoc-x/"
+        assert chunk["split_part"] is None
+
+    assert chunks[1]["section_path"] == "Công dụng"
+    assert chunks[2]["section_path"] == "Cách dùng"
+
+    # ids are unique and deterministic across repeated runs
+    ids = [c["id"] for c in chunks]
+    assert len(set(ids)) == len(ids)
+    chunks_again = chunk_article(
+        text, article_type="drug", article_slug="thuoc-x",
+        token_counter=_word_count, max_tokens=1000,
+    )
+    assert [c["id"] for c in chunks_again] == ids

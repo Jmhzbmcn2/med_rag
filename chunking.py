@@ -1,6 +1,8 @@
 import re
+import uuid
 
-from typing import Callable
+from pathlib import Path
+from typing import Callable, Iterator
 
 from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 
@@ -8,6 +10,8 @@ _HEADER_LEVELS = [("##", "H2"), ("###", "H3"), ("####", "H4"), ("#####", "H5")]
 _HEADER_LINE = re.compile(r"^#{1,6}\s")
 _SEPARATORS = ["\n\n", "\n", ". ", " ", ""]
 _HEADER_BUDGET_SAFETY_MARGIN = 10
+
+CHUNK_NAMESPACE = uuid.UUID("f47b6a3e-3f0e-4b8a-9c2e-2f8e6a1d7c50")
 
 
 def parse_article(text: str) -> tuple[str, str, str]:
@@ -115,3 +119,38 @@ def guard_rail_split(
                 "split_part": f"{i}/{total}",
             })
     return result
+
+
+def chunk_article(
+    text: str,
+    article_type: str,
+    article_slug: str,
+    token_counter: Callable[[str], int],
+    max_tokens: int = 400,
+) -> list[dict]:
+    url, title, clean_body = parse_article(text)
+    sections = split_sections(clean_body)
+    sections = inject_context_header(sections, title, url)
+    sections = guard_rail_split(sections, title, url, token_counter, max_tokens)
+
+    chunks = []
+    for idx, section in enumerate(sections):
+        chunk_id = str(uuid.uuid5(CHUNK_NAMESPACE, f"{article_type}:{article_slug}:{idx}"))
+        chunks.append({
+            "id": chunk_id,
+            "type": article_type,
+            "article_slug": article_slug,
+            "article_title": title,
+            "article_url": url,
+            "section_path": section["breadcrumb"],
+            "text": section["text"],
+            "token_count": section["token_count"],
+            "split_part": section["split_part"],
+        })
+    return chunks
+
+
+def iter_articles(data_dir: str = "data") -> Iterator[tuple[str, str, str]]:
+    for type_dir in sorted(p for p in Path(data_dir).iterdir() if p.is_dir()):
+        for file_path in sorted(type_dir.glob("*.txt")):
+            yield type_dir.name, file_path.stem, file_path.read_text(encoding="utf-8")
