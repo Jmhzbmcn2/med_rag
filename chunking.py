@@ -50,3 +50,19 @@ def split_sections(clean_body: str) -> list[dict]:
         )
         sections.append({"breadcrumb": breadcrumb, "content": doc.page_content.strip()})
     return sections
+
+
+def _context_header(title: str, breadcrumb: str, url: str) -> str:
+    parts = [f"Chủ đề: {title}"]
+    if breadcrumb:
+        parts.append(f"Mục: {breadcrumb}")
+    parts.append(f"Nguồn: {url}")
+    return "[" + " | ".join(parts) + "]"
+
+
+def inject_context_header(sections: list[dict], title: str, url: str) -> list[dict]:
+    result = []
+    for section in sections:
+        header = _context_header(title, section["breadcrumb"], url)
+        result.append({**section, "text": f"{header}\n\n{section['content']}"})
+    return result

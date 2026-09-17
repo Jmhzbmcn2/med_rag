@@ -1,4 +1,4 @@
-from chunking import parse_article, split_sections
+from chunking import parse_article, split_sections, inject_context_header
 
 
 def test_parse_article_strips_metadata_lines():
@@ -60,3 +60,24 @@ def test_split_sections_breadcrumb_and_empty_drop():
     assert sections[1]["content"].startswith("## Công dụng")
     assert "Uống 1 viên mỗi ngày." in sections[2]["content"]
     assert "Có thể gây buồn ngủ." in sections[3]["content"]
+
+
+def test_inject_context_header_with_and_without_breadcrumb():
+    sections = [
+        {"breadcrumb": "", "content": "Đoạn intro."},
+        {"breadcrumb": "Công dụng", "content": "## Công dụng\nThuốc X dùng để giảm đau."},
+    ]
+    result = inject_context_header(
+        sections, title="Thuốc X là gì?", url="https://youmed.vn/tin-tuc/thuoc-x/"
+    )
+
+    assert result[0]["text"] == (
+        "[Chủ đề: Thuốc X là gì? | Nguồn: https://youmed.vn/tin-tuc/thuoc-x/]\n\n"
+        "Đoạn intro."
+    )
+    assert result[1]["text"] == (
+        "[Chủ đề: Thuốc X là gì? | Mục: Công dụng | Nguồn: https://youmed.vn/tin-tuc/thuoc-x/]\n\n"
+        "## Công dụng\nThuốc X dùng để giảm đau."
+    )
+    assert result[1]["breadcrumb"] == "Công dụng"
+    assert result[1]["content"] == "## Công dụng\nThuốc X dùng để giảm đau."
