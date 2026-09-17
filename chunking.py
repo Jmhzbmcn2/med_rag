@@ -1,9 +1,13 @@
 import re
 
-from langchain_text_splitters import MarkdownHeaderTextSplitter
+from typing import Callable
+
+from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 
 _HEADER_LEVELS = [("##", "H2"), ("###", "H3"), ("####", "H4"), ("#####", "H5")]
 _HEADER_LINE = re.compile(r"^#{1,6}\s")
+_SEPARATORS = ["\n\n", "\n", ". ", " ", ""]
+_HEADER_BUDGET_SAFETY_MARGIN = 10
 
 
 def parse_article(text: str) -> tuple[str, str, str]:
@@ -65,4 +69,49 @@ def inject_context_header(sections: list[dict], title: str, url: str) -> list[di
     for section in sections:
         header = _context_header(title, section["breadcrumb"], url)
         result.append({**section, "text": f"{header}\n\n{section['content']}"})
+    return result
+
+
+def guard_rail_split(
+    sections: list[dict],
+    title: str,
+    url: str,
+    token_counter: Callable[[str], int],
+    max_tokens: int = 400,
+) -> list[dict]:
+    result = []
+    for section in sections:
+        n = token_counter(section["text"])
+        if n <= max_tokens:
+            result.append({
+                "breadcrumb": section["breadcrumb"],
+                "text": section["text"],
+                "token_count": n,
+                "split_part": None,
+            })
+            continue
+
+        sample_header = _context_header(title, f"{section['breadcrumb']} (phần 1/1)".strip(), url)
+        header_budget = token_counter(sample_header)
+        body_budget = max(max_tokens - header_budget - _HEADER_BUDGET_SAFETY_MARGIN, 1)
+
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=body_budget,
+            chunk_overlap=0,
+            length_function=token_counter,
+            separators=_SEPARATORS,
+        )
+        parts = splitter.split_text(section["content"])
+        total = len(parts)
+        for i, part in enumerate(parts, 1):
+            suffix = f"(phần {i}/{total})"
+            breadcrumb_display = f"{section['breadcrumb']} {suffix}".strip()
+            header = _context_header(title, breadcrumb_display, url)
+            text = f"{header}\n\n{part.strip()}"
+            result.append({
+                "breadcrumb": section["breadcrumb"],
+                "text": text,
+                "token_count": token_counter(text),
+                "split_part": f"{i}/{total}",
+            })
     return result
