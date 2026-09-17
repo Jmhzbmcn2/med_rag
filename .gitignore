@@ -1,0 +1,10 @@
+data/
+test_case/
+testset/
+vietmed_crawled/
+
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
