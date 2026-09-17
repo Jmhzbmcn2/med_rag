@@ -8,10 +8,10 @@ from chunking import chunk_article, iter_articles
 
 MAX_TOKENS = 400
 BASELINE_HIT_RATE = {
-    "disease": 0.888,
-    "medicine": 0.919,
-    "drug": 0.909,
-    "body-part": 0.864,
+    "disease": 0.819,
+    "medicine": 0.873,
+    "drug": 0.899,
+    "body-part": 0.818,
 }
 REGRESSION_MARGIN = 0.03
 

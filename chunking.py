@@ -9,7 +9,7 @@ from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharac
 _HEADER_LEVELS = [("##", "H2"), ("###", "H3"), ("####", "H4"), ("#####", "H5")]
 _HEADER_LINE = re.compile(r"^#{1,6}\s")
 _SEPARATORS = ["\n\n", "\n", ". ", " ", ""]
-_HEADER_BUDGET_SAFETY_MARGIN = 10
+_HEADER_BUDGET_SAFETY_MARGIN = 30
 
 CHUNK_NAMESPACE = uuid.UUID("f47b6a3e-3f0e-4b8a-9c2e-2f8e6a1d7c50")
 
