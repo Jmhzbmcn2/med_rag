@@ -9,6 +9,10 @@ from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharac
 _HEADER_LEVELS = [("##", "H2"), ("###", "H3"), ("####", "H4"), ("#####", "H5")]
 _HEADER_LINE = re.compile(r"^#{1,6}\s")
 _SEPARATORS = ["\n\n", "\n", ". ", " ", ""]
+# Reserves headroom for header/suffix width guesses and tokenizer
+# non-additivity across the header+body join. 10 was measured insufficient
+# (8 chunks landed 3-8 tokens over the 400 cap on real data); 30 is the
+# smallest margin measured to have zero violations across all 584 files.
 _HEADER_BUDGET_SAFETY_MARGIN = 30
 
 CHUNK_NAMESPACE = uuid.UUID("f47b6a3e-3f0e-4b8a-9c2e-2f8e6a1d7c50")
@@ -95,8 +99,13 @@ def guard_rail_split(
             })
             continue
 
-        sample_header = _context_header(title, f"{section['breadcrumb']} (phần 1/1)".strip(), url)
-        header_budget = token_counter(sample_header)
+        # Budget the split on the header WITHOUT the "(phần i/n)" suffix —
+        # its width depends on the part count, which we only know after
+        # splitting. The safety margin below covers that unknown suffix
+        # width plus general tokenizer non-additivity. Split first, then
+        # build each part's real header from the real i/total.
+        header_no_suffix = _context_header(title, section["breadcrumb"], url)
+        header_budget = token_counter(header_no_suffix)
         body_budget = max(max_tokens - header_budget - _HEADER_BUDGET_SAFETY_MARGIN, 1)
 
         splitter = RecursiveCharacterTextSplitter(
@@ -106,16 +115,54 @@ def guard_rail_split(
             separators=_SEPARATORS,
         )
         parts = splitter.split_text(section["content"])
+
+        # Defensive: a part's real header (with its real "(phần i/n)" suffix)
+        # can still push header+body over the cap — either the suffix was
+        # wider than the margin covered, or the tokenizer just isn't additive
+        # across the join. Re-split any offending part with a smaller budget
+        # and splice the pieces back in, so no content is ever dropped.
+        i = 0
+        while i < len(parts):
+            total_guess = len(parts)
+            trial_header = _context_header(
+                title, f"{section['breadcrumb']} (phần {i + 1}/{total_guess})".strip(), url
+            )
+            trial_text = f"{trial_header}\n\n{parts[i].strip()}"
+            overflow = token_counter(trial_text) - max_tokens
+            if overflow > 0:
+                smaller_budget = max(body_budget - overflow - 5, 1)
+                sub_splitter = RecursiveCharacterTextSplitter(
+                    chunk_size=smaller_budget,
+                    chunk_overlap=0,
+                    length_function=token_counter,
+                    separators=_SEPARATORS,
+                )
+                sub_parts = sub_splitter.split_text(parts[i])
+                if len(sub_parts) > 1:
+                    parts[i:i + 1] = sub_parts
+                    continue  # re-check the first spliced-in piece
+            i += 1
+
         total = len(parts)
         for i, part in enumerate(parts, 1):
             suffix = f"(phần {i}/{total})"
             breadcrumb_display = f"{section['breadcrumb']} {suffix}".strip()
             header = _context_header(title, breadcrumb_display, url)
             text = f"{header}\n\n{part.strip()}"
+            token_count = token_counter(text)
+            # Last-resort backstop: the token cap must never ship violated
+            # silently. If the defensive re-split above still didn't get a
+            # part under the cap (e.g. it was already a single word/sentence
+            # too long to shrink further), fail loudly instead of shipping it.
+            assert token_count <= max_tokens, (
+                f"guard_rail_split: part {i}/{total} of section "
+                f"'{section['breadcrumb']}' is {token_count} tokens "
+                f"(cap {max_tokens}) even after defensive re-split"
+            )
             result.append({
                 "breadcrumb": section["breadcrumb"],
                 "text": text,
-                "token_count": token_counter(text),
+                "token_count": token_count,
                 "split_part": f"{i}/{total}",
             })
     return result

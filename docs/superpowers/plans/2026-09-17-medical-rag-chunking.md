@@ -628,7 +628,7 @@ def main() -> int:
 
     # regression check: context containment hit-rate per type
     for article_type, baseline in BASELINE_HIT_RATE.items():
-        df = pd.read_csv(f"test_case/{article_type}.csv")
+        df = pd.read_csv(f"test_case/{article_type}.csv", encoding="utf-8")
         hit, total = 0, 0
         for _, row in df.iterrows():
             slug = slug_from_url(row["article_url"])

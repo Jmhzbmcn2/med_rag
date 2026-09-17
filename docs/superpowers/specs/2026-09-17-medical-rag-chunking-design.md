@@ -54,16 +54,18 @@ Measured across all 584 sampled files (`data/`):
 copy of one section's body (paragraph + its list), not a full article and
 not an arbitrary span. Validated by containment check (see Validation).
 
-## Decision: split at every header level (H2–H6), not H2-only
+## Decision: split at every header level (H2–H5), not H2-only
 
 Two options were measured directly against this data:
 
 1. **H2-only split** (what the LightRAG sibling project does): median
    chunk 700–940 chars, but with our 400-token cap, 4–33% of chunks need
    further guard-rail splitting (character-based, no markdown awareness).
-2. **All-level split** (H2 through H6, each header a candidate chunk
+2. **All-level split** (H2 through H5, each header a candidate chunk
    boundary): median chunk 270–450 chars, only 0.8–3.4% need guard-rail
-   splitting.
+   splitting (word-count-proxy estimate from brainstorming — superseded by
+   the real tokenizer measurement in Known Limitations below: 1.4–5.3%
+   per type).
 
 Both gave the *same* context-containment rate (see Validation) — the ~10%
 containment misses are contexts spanning two sections, not information

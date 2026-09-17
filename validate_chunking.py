@@ -45,10 +45,12 @@ def main() -> int:
         print(f"FAIL: {len(over_cap)} chunks exceed {MAX_TOKENS} tokens")
         ok = False
 
-    # invariant: no empty text
-    empty = [c for c in all_chunks if not c["text"].strip()]
+    # invariant: no empty body (text always starts with a non-empty
+    # "[Chủ đề: ...]" header, so checking the whole text is a tautology —
+    # check the body after the header/body-separating blank line instead)
+    empty = [c for c in all_chunks if not c["text"].split("\n\n", 1)[-1].strip()]
     if empty:
-        print(f"FAIL: {len(empty)} chunks have empty text")
+        print(f"FAIL: {len(empty)} chunks have empty body")
         ok = False
 
     # invariant: unique ids
