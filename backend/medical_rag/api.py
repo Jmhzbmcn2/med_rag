@@ -28,7 +28,7 @@ async def lifespan(app: FastAPI):
     rerank_url = os.environ.get("RERANK_URL")
     rerank = RerankClient(rerank_url).rerank if rerank_url else None
     app.state.client = client
-    app.state.retriever = Retriever(client, EmbedClient(embed_url).embed, rerank)
+    app.state.retriever = Retriever(client, EmbedClient(embed_url, timeout=15, retries=2).embed, rerank)
     yield
     client.close()
 

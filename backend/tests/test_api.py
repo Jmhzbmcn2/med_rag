@@ -91,3 +91,16 @@ def test_startup_requires_an_ingested_collection(monkeypatch, tmp_path):
     with pytest.raises(RuntimeError, match="collection"):
         with TestClient(api.app):
             pass
+
+
+def test_startup_uses_short_embed_timeouts(monkeypatch, tmp_path):
+    path = tmp_path / "q"
+    store = open_client(str(path))
+    ensure_collection(store)
+    store.close()  # free the file lock for the app
+    monkeypatch.setenv("EMBED_URL", "http://embed.test")
+    monkeypatch.setenv("QDRANT_PATH", str(path))
+    monkeypatch.delenv("RERANK_URL", raising=False)
+    with TestClient(api.app):
+        embed_client = api.app.state.retriever.embed.__self__
+        assert (embed_client.timeout, embed_client.retries) == (15, 2)

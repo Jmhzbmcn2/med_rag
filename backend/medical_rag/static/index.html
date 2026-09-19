@@ -311,6 +311,7 @@
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({question}),
+          signal: AbortSignal.timeout(60000),
         });
         const data = await res.json().catch(() => ({}));
         if(!res.ok) throw new Error(typeof data.detail === 'string' ? data.detail : `Request failed (${res.status})`);
@@ -320,7 +321,7 @@
       }catch(err){
         bubble.classList.remove('pending');
         bubble.classList.add('error');
-        bubble.textContent = err.message;
+        bubble.textContent = err.name === 'TimeoutError' ? 'Request timed out' : err.message;
       }finally{
         sendBtn.disabled = false;
         messages.scrollTop = messages.scrollHeight;
