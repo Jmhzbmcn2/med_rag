@@ -4,7 +4,9 @@ from qdrant_client import models
 from medical_rag.encoders import DENSE_DIM
 from medical_rag.ingestion.ingest import ingest
 from medical_rag.store import COLLECTION, ensure_collection, open_client
+from fake_server import fake_embed_server, ok_body
 from validate_ingest import check_invariants, load_expected, max_segmented_tokens, smoke_retrieval
+from validate_ingest import main as validate_main
 
 
 def _word_count(text: str) -> int:
@@ -89,3 +91,26 @@ def test_smoke_retrieval_finds_the_right_article_with_sparse_search(tmp_path):
     assert results["drug"]["sparse"] == {"article": 1.0, "chunk": 1.0}
     for levels in results["drug"].values():
         assert all(0.0 <= value <= 1.0 for value in levels.values())
+
+
+def test_main_exits_2_when_embed_url_is_missing(monkeypatch, capsys):
+    monkeypatch.delenv("EMBED_URL", raising=False)
+    assert validate_main(["--data-dir", "nowhere"]) == 2
+    assert "EMBED_URL" in capsys.readouterr().out
+
+
+def test_main_exits_2_when_the_tunnel_is_dead(capsys):
+    assert validate_main(["--embed-url", "http://127.0.0.1:1"]) == 2
+    assert "update EMBED_URL" in capsys.readouterr().out
+
+
+def test_main_exits_2_when_the_collection_does_not_exist(tmp_path, capsys):
+    (tmp_path / "empty").mkdir()
+    with fake_embed_server(lambda texts, n: (200, ok_body(texts))) as (url, _):
+        code = validate_main([
+            "--embed-url", url,
+            "--data-dir", str(tmp_path / "empty"),
+            "--qdrant-path", str(tmp_path / "q"),
+        ])
+    assert code == 2
+    assert "validate aborted" in capsys.readouterr().out

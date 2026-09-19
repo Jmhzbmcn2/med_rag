@@ -12,6 +12,7 @@ from medical_rag.encoders import (
     DENSE_DIM,
     Bm25Encoder,
     EmbedClient,
+    EmbedError,
     embed_input,
     segment,
     terms,
@@ -131,26 +132,31 @@ def main(argv: list[str] | None = None) -> int:
         print("EMBED_URL is not set (or pass --embed-url).")
         return 2
 
-    tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
-    token_counter = lambda text: len(tokenizer.encode(text, add_special_tokens=False))  # noqa: E731
-    expected = load_expected(args.data_dir, token_counter)
-    client = open_client(args.qdrant_path)
-
-    problems = check_invariants(client, expected)
-    longest = max_segmented_tokens(expected, token_counter)
-    if longest > MODEL_MAX_TOKENS:
-        problems.append(f"longest segmented chunk has {longest} tokens > model max {MODEL_MAX_TOKENS}")
-    print(f"chunks expected={len(expected)} longest segmented chunk={longest} tokens")
-    for problem in problems[:20]:
-        print(f"FAIL: {problem}")
-
     embed_client = EmbedClient(args.embed_url)
-    results = smoke_retrieval(client, embed_client.embed, args.test_case_dir, args.per_type, args.seed)
-    for article_type, modes in results.items():
-        for mode, levels in modes.items():
-            print(
-                f"{article_type:10s} {mode:6s} hit@5 article={levels['article']:.1%} chunk={levels['chunk']:.1%}"
-            )
+    try:
+        embed_client.health_check()
+        tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
+        token_counter = lambda text: len(tokenizer.encode(text, add_special_tokens=False))  # noqa: E731
+        expected = load_expected(args.data_dir, token_counter)
+        client = open_client(args.qdrant_path)
+
+        problems = check_invariants(client, expected)
+        longest = max_segmented_tokens(expected, token_counter)
+        if longest > MODEL_MAX_TOKENS:
+            problems.append(f"longest segmented chunk has {longest} tokens > model max {MODEL_MAX_TOKENS}")
+        print(f"chunks expected={len(expected)} longest segmented chunk={longest} tokens")
+        for problem in problems[:20]:
+            print(f"FAIL: {problem}")
+
+        results = smoke_retrieval(client, embed_client.embed, args.test_case_dir, args.per_type, args.seed)
+        for article_type, modes in results.items():
+            for mode, levels in modes.items():
+                print(
+                    f"{article_type:10s} {mode:6s} hit@5 article={levels['article']:.1%} chunk={levels['chunk']:.1%}"
+                )
+    except (EmbedError, OSError, RuntimeError, ValueError) as error:
+        print(f"validate aborted: {error}")
+        return 2
     return 1 if problems else 0
 
 
