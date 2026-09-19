@@ -85,6 +85,8 @@ def smoke_retrieval(client, embed, test_case_dir: str, per_type: int = 30, seed:
     for path in sorted(Path(test_case_dir).glob("*.csv")):
         article_type = path.stem
         frame = pd.read_csv(path, encoding="utf-8")
+        if frame.empty:
+            continue
         sample = frame.sample(n=min(per_type, len(frame)), random_state=seed)
         questions = [str(question) for question in sample["question"]]
         vectors = embed([segment(question) for question in questions])
@@ -147,6 +149,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"chunks expected={len(expected)} longest segmented chunk={longest} tokens")
         for problem in problems[:20]:
             print(f"FAIL: {problem}")
+        if len(problems) > 20:
+            print(f"... and {len(problems) - 20} more problems")
 
         results = smoke_retrieval(client, embed_client.embed, args.test_case_dir, args.per_type, args.seed)
         for article_type, modes in results.items():

@@ -23,6 +23,15 @@ def ensure_collection(client: QdrantClient, recreate: bool = False) -> None:
                     f"collection {COLLECTION!r} has dense size {vectors['dense'].size}, "
                     f"expected {DENSE_DIM}; pass recreate=True to rebuild it"
                 )
+            sparse = client.get_collection(COLLECTION).config.params.sparse_vectors
+            if not sparse or "sparse" not in sparse:
+                raise ValueError(
+                    f"collection {COLLECTION!r} has no named 'sparse' vector; pass recreate=True to rebuild it"
+                )
+            if sparse["sparse"].modifier != models.Modifier.IDF:
+                raise ValueError(
+                    f"collection {COLLECTION!r} sparse vector lacks the IDF modifier; pass recreate=True to rebuild it"
+                )
             return
         client.delete_collection(COLLECTION)
 
@@ -61,6 +70,7 @@ def replace_article(
             models.FieldCondition(key="article_slug", match=models.MatchValue(value=article_slug)),
         ]
     )
+    # not atomic: the delete runs before the upsert, so ingest() stops the run on a store error instead of continuing
     client.delete(COLLECTION, points_selector=models.FilterSelector(filter=article_filter))
     if points:
         client.upsert(COLLECTION, points=points)

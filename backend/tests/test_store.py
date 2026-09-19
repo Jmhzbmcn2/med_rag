@@ -57,6 +57,27 @@ def test_ensure_collection_raises_on_dense_size_mismatch():
         ensure_collection(client)
 
 
+def test_ensure_collection_raises_when_the_sparse_vector_is_missing():
+    client = open_client(None)
+    client.create_collection(
+        COLLECTION,
+        vectors_config={"dense": models.VectorParams(size=DENSE_DIM, distance=models.Distance.COSINE)},
+    )
+    with pytest.raises(ValueError, match="sparse"):
+        ensure_collection(client)
+
+
+def test_ensure_collection_raises_when_the_sparse_vector_has_no_idf_modifier():
+    client = open_client(None)
+    client.create_collection(
+        COLLECTION,
+        vectors_config={"dense": models.VectorParams(size=DENSE_DIM, distance=models.Distance.COSINE)},
+        sparse_vectors_config={"sparse": models.SparseVectorParams()},
+    )
+    with pytest.raises(ValueError, match="IDF"):
+        ensure_collection(client)
+
+
 def test_ensure_collection_recreate_drops_existing_points():
     client = open_client(None)
     ensure_collection(client)
@@ -103,23 +124,24 @@ def test_replace_article_replaces_only_that_article_and_is_idempotent():
     assert _count(client) == 2  # an article that became empty is removed
 
 
-def test_sparse_query_ranks_rare_term_above_common_term():
-    docs = ["bệnh_nhân đau", "bệnh_nhân sốt", "bệnh_nhân ho"]
+def test_sparse_query_scores_a_rare_term_above_a_common_term():
+    docs = ["hiếm", "phổ_biến", "phổ_biến", "phổ_biến"]
     encoder = Bm25Encoder()
     encoder.fit(docs)
     client = open_client(None)
     ensure_collection(client)
-    chunks = [_chunk(f"d{i}", slug=f"s{i}") for i in range(3)]
+    chunks = [_chunk(f"d{i}", slug=f"s{i}") for i in range(4)]
     client.upsert(
         COLLECTION,
         points=[build_point(c, _dense(i), encoder.encode_doc(d)) for i, (c, d) in enumerate(zip(chunks, docs))],
     )
 
-    indices, values = encoder.encode_query("bệnh_nhân sốt")
+    indices, values = encoder.encode_query("hiếm phổ_biến")
     result = client.query_points(
-        COLLECTION, query=models.SparseVector(indices=indices, values=values), using="sparse", limit=3
+        COLLECTION, query=models.SparseVector(indices=indices, values=values), using="sparse", limit=4
     )
-    assert result.points[0].payload["article_slug"] == "s1"  # the only doc with the rare term "sốt"
+    assert result.points[0].payload["article_slug"] == "s0"  # the only doc holding the rare term
+    assert result.points[0].score > result.points[1].score
 
 
 def test_hybrid_query_with_rrf_fusion_returns_the_doc_both_signals_agree_on():

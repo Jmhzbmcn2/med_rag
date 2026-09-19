@@ -120,7 +120,9 @@ def test_main_exits_2_when_data_dir_is_missing(tmp_path, capsys):
     with fake_embed_server(lambda texts, n: (200, ok_body(texts))) as (url, _):
         code = ingest_module.main(_main_args(url, tmp_path / "nowhere", tmp_path))
     assert code == 2
-    assert "ingest aborted" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "ingest aborted" in out
+    assert "nowhere" in out  # names the missing directory, so a tokenizer failure cannot satisfy this
 
 
 def test_main_exits_2_when_data_dir_has_no_articles(tmp_path, capsys):
@@ -161,3 +163,43 @@ def test_main_exits_2_when_the_qdrant_path_is_locked(tmp_path, capsys):
         holder.close()
     assert code == 2
     assert "startup failed" in capsys.readouterr().out
+
+
+def _write_many(tmp_path, count):
+    for n in range(count):
+        _write(
+            tmp_path, "drug", f"thuoc-{n}",
+            _article(f"thuoc-{n}", "Giới thiệu thuốc.", [("Công dụng", "Giảm đau.")]),
+        )
+
+
+def test_five_consecutive_embed_failures_stop_the_run(tmp_path):
+    _write_many(tmp_path, 7)
+    client = open_client(None)
+    ensure_collection(client)
+
+    def dead_embedder(texts):
+        raise EmbedError("tunnel down")
+
+    report = ingest(str(tmp_path), client, dead_embedder, _word_count)
+
+    assert report.articles_ok == 0
+    assert len(report.articles_failed) == 5  # stopped after 5, the last 2 articles were never tried
+
+
+def test_embed_failures_that_are_not_consecutive_do_not_stop_the_run(tmp_path):
+    _write_many(tmp_path, 7)
+    client = open_client(None)
+    ensure_collection(client)
+    calls = []
+
+    def alternating_embedder(texts):
+        calls.append(1)
+        if len(calls) % 2 == 1:
+            raise EmbedError("blip")
+        return fake_embedder(texts)
+
+    report = ingest(str(tmp_path), client, alternating_embedder, _word_count)
+
+    assert report.articles_ok == 3
+    assert len(report.articles_failed) == 4

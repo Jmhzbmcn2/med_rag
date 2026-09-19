@@ -82,6 +82,7 @@ class EmbedClient:
         self.timeout = timeout
         self.retries = retries
         self.backoff = backoff
+        self._session = requests.Session()
 
     def embed(self, segmented_texts: list[str]) -> list[list[float]]:
         vectors = []
@@ -91,6 +92,7 @@ class EmbedClient:
             try:
                 vectors.extend(self._post(batch))
             except _GatewayTimeout:
+                # size stays halved for the rest of this call; embed() is called once per article, so the effect is bounded
                 size = max(1, len(batch) // 2)
                 continue
             i += len(batch)
@@ -110,7 +112,7 @@ class EmbedClient:
             if attempt:
                 time.sleep(self.backoff * 2 ** (attempt - 1))
             try:
-                resp = requests.post(self.url, json={"texts": batch}, timeout=self.timeout)
+                resp = self._session.post(self.url, json={"texts": batch}, timeout=self.timeout)
             except (requests.ConnectionError, requests.Timeout) as e:
                 last_error = e
                 continue

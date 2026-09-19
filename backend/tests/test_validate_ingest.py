@@ -93,6 +93,17 @@ def test_smoke_retrieval_finds_the_right_article_with_sparse_search(tmp_path):
         assert all(0.0 <= value <= 1.0 for value in levels.values())
 
 
+def test_smoke_retrieval_skips_an_empty_csv(tmp_path):
+    client, _ = _ingested(tmp_path)
+    case_dir = tmp_path / "cases"
+    case_dir.mkdir()
+    pd.DataFrame(columns=["question", "context", "article_url"]).to_csv(
+        case_dir / "drug.csv", index=False, encoding="utf-8"
+    )
+
+    assert smoke_retrieval(client, fake_embedder, str(case_dir)) == {}
+
+
 def test_main_exits_2_when_embed_url_is_missing(monkeypatch, capsys):
     monkeypatch.delenv("EMBED_URL", raising=False)
     assert validate_main(["--data-dir", "nowhere"]) == 2
@@ -113,4 +124,6 @@ def test_main_exits_2_when_the_collection_does_not_exist(tmp_path, capsys):
             "--qdrant-path", str(tmp_path / "q"),
         ])
     assert code == 2
-    assert "validate aborted" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "validate aborted" in out
+    assert "medical_rag not found" in out  # names the missing collection, so a tokenizer failure cannot satisfy this

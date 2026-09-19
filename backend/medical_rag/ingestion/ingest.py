@@ -17,6 +17,7 @@ from medical_rag.ingestion.chunking import chunk_article, iter_articles
 from medical_rag.store import COLLECTION, build_point, ensure_collection, open_client, replace_article
 
 TOKENIZER_NAME = "dangvantuan/vietnamese-embedding"
+MAX_CONSECUTIVE_EMBED_FAILURES = 5
 
 
 @dataclass
@@ -43,6 +44,7 @@ def ingest(
     encoder.fit([doc for _, _, _, segmented in articles for doc in segmented])
 
     report = IngestReport(expected_chunks=sum(len(chunks) for _, _, chunks, _ in articles))
+    embed_failures = 0
     for number, (article_type, slug, chunks, segmented) in enumerate(articles, 1):
         try:
             dense = embedder(segmented)
@@ -51,7 +53,16 @@ def ingest(
         except EmbedError as error:
             report.articles_failed.append(f"{article_type}/{slug}: {error}")
             print(f"[{number}/{len(articles)}] FAILED {article_type}/{slug}: {error}", flush=True)
+            embed_failures += 1
+            if embed_failures >= MAX_CONSECUTIVE_EMBED_FAILURES:
+                print(
+                    f"embedding failed {MAX_CONSECUTIVE_EMBED_FAILURES} times in a row, the tunnel is probably down; "
+                    "re-run after restarting the notebook",
+                    flush=True,
+                )
+                break
             continue
+        embed_failures = 0
         points = [
             build_point(chunk, vector, encoder.encode_doc(doc))
             for chunk, vector, doc in zip(chunks, dense, segmented)

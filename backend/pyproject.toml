@@ -10,8 +10,8 @@ dependencies = [
     "langchain-text-splitters",
     "transformers",
     "pandas",
-    "qdrant-client>=1.10",
-    "pyvi",
+    "qdrant-client>=1.17,<2",
+    "pyvi==0.1.1",
     "requests",
 ]
 
@@ -24,3 +24,4 @@ include = ["medical_rag*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = [".", "scripts"]
+filterwarnings = ["error::UserWarning"]

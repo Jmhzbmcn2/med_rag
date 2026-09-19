@@ -30,7 +30,7 @@ def test_embed_input_is_the_chunk_text_unchanged():
 
 def test_terms_normalizes_nfc_lowercases_and_keeps_compounds():
     assert terms("Bệnh_Nhân đau 325 mg") == ["bệnh_nhân", "đau", "325", "mg"]
-    assert terms("é") == terms("é") == ["é"]
+    assert terms("e\u0301") == terms("\u00e9") == ["\u00e9"]
     assert terms("") == []
 
 
