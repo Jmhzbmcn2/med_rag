@@ -88,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
         embed_client.health_check()
         qdrant = open_client(args.qdrant_path)
         ensure_collection(qdrant, recreate=args.recreate)
-    except (EmbedError, ValueError) as error:
+    except (EmbedError, OSError, RuntimeError, ValueError) as error:
         print(f"startup failed: {error}")
         return 2
 

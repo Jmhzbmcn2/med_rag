@@ -150,3 +150,14 @@ def test_store_failure_is_recorded_and_stops_the_run(tmp_path):
     assert len(report.articles_failed) == 1
     assert report.articles_failed[0].startswith("disease/benh-b")
     assert "store error" in report.articles_failed[0]
+
+
+def test_main_exits_2_when_the_qdrant_path_is_locked(tmp_path, capsys):
+    holder = open_client(str(tmp_path / "q"))  # keeps the local storage lock
+    try:
+        with fake_embed_server(lambda texts, n: (200, ok_body(texts))) as (url, _):
+            code = ingest_module.main(_main_args(url, tmp_path, tmp_path))
+    finally:
+        holder.close()
+    assert code == 2
+    assert "startup failed" in capsys.readouterr().out
