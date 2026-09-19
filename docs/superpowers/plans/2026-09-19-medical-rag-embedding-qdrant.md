@@ -31,15 +31,15 @@ Use superpowers:subagent-driven-development. One fresh implementer per task, str
 | Task | Deliverable | Depends on | Implementer model | Why this tier |
 |---|---|---|---|---|
 | 1 | `backend/` layout, `pyproject.toml`, imports fixed, old tests green | none | sonnet | path/import fixes and two long verification runs need judgment |
-| 2 | `segment`, `embed_input`, `DENSE_DIM` | 1 | haiku | complete code given |
-| 3 | `Bm25Encoder` | 2 | haiku | complete code given |
+| 2 | `segment`, `embed_input`, `DENSE_DIM` | 1 | sonnet | complete code given |
+| 3 | `Bm25Encoder` | 2 | sonnet | complete code given |
 | 4 | `EmbedClient` + `EmbedError` | 3 | sonnet | threaded test server, retry logic, likely debugging |
-| 5 | `store.py` | 4 | haiku | complete code given |
+| 5 | `store.py` | 4 | sonnet | complete code given |
 | 6 | `ingest.py` (`ingest`, CLI `main`) | 5 | sonnet | orchestration and CLI edge cases |
 | 7 | `validate_ingest.py` + tests | 6 | sonnet | script plus in-memory Qdrant tests |
 | 8 | live ingest, measured hit@5, floors | 7 | controller + user | needs live Kaggle |
 
-Reviewer models: task reviewers `sonnet`; final reviewer `opus`; scoped re-reviews `haiku` or `sonnet` by risk.
+User ruling (2026-09-19): every subagent runs on `sonnet`, never `haiku`. Task reviewers and scoped re-reviews `sonnet`; final whole-branch reviewer `opus`.
 
 ---
 
