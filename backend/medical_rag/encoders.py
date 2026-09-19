@@ -84,13 +84,13 @@ class EmbedClient:
         self.backoff = backoff
         self._session = requests.Session()
 
-    def embed(self, segmented_texts: list[str]) -> list[list[float]]:
+    def embed(self, segmented_texts: list[str], task: str = "document") -> list[list[float]]:
         vectors = []
         i, size = 0, self.batch_size
         while i < len(segmented_texts):
             batch = segmented_texts[i:i + size]
             try:
-                vectors.extend(self._post(batch))
+                vectors.extend(self._post(batch, task))
             except _GatewayTimeout:
                 # size stays halved for the rest of this call; embed() is called once per article, so the effect is bounded
                 size = max(1, len(batch) // 2)
@@ -103,16 +103,19 @@ class EmbedClient:
             self.embed(["xin chào"])
         except EmbedError as e:
             raise EmbedError(
-                f"tunnel not responding, check the Kaggle notebook and update EMBED_URL: {e}"
+                f"embed server not responding, start serve_model/embed_server.py and update EMBED_URL: {e}"
             ) from e
 
-    def _post(self, batch: list[str]) -> list[list[float]]:
+    def _post(self, batch: list[str], task: str = "document") -> list[list[float]]:
+        body = {"texts": batch}
+        if task == "query":
+            body["task"] = task  # only embed_server.py reads it; the Kaggle server ignores it
         last_error = None
         for attempt in range(self.retries):
             if attempt:
                 time.sleep(self.backoff * 2 ** (attempt - 1))
             try:
-                resp = self._session.post(self.url, json={"texts": batch}, timeout=self.timeout)
+                resp = self._session.post(self.url, json=body, timeout=self.timeout)
             except (requests.ConnectionError, requests.Timeout) as e:
                 last_error = e
                 continue

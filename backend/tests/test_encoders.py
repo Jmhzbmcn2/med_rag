@@ -173,3 +173,23 @@ def test_embed_client_rejects_a_non_object_json_body():
     with fake_embed_server(lambda texts, n: (200, ["not", "an", "object"])) as (url, _):
         with pytest.raises(EmbedError, match="malformed"):
             EmbedClient(url).embed(["a"])
+
+
+def test_embed_sends_task_only_for_queries():
+    client = EmbedClient("http://embed.test")
+    bodies = []
+
+    class Response:
+        status_code = 200
+
+        def json(self):
+            return ok_body(bodies[-1]["texts"])
+
+    def fake_post(url, json, timeout):
+        bodies.append(json)
+        return Response()
+
+    client._session.post = fake_post
+    client.embed(["a"])
+    client.embed(["b"], task="query")
+    assert bodies == [{"texts": ["a"]}, {"texts": ["b"], "task": "query"}]
