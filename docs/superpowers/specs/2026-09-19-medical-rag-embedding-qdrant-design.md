@@ -1,7 +1,7 @@
 # Medical RAG — Embedding and Qdrant Ingestion Design
 
 Date: 2026-09-19
-Status: approved in brainstorming (sections 1-4); written spec awaiting user review.
+Status: approved (design sections 1-4 in brainstorming; user asked for the implementation plan after reading the written spec). Plan: `docs/superpowers/plans/2026-09-19-medical-rag-embedding-qdrant.md`.
 Scope: turn chunk dicts from `chunk_article` into points in a local Qdrant collection with dense and sparse (BM25) vectors. Retrieval, reranking and generation are separate sub-projects.
 
 ## Context and decisions
@@ -28,7 +28,7 @@ Embedding, reranker and LLM are **not** run locally. They run on Kaggle (T4 x2) 
 Consequences for this design:
 
 - `EMBED_URL` (and later `LLM_URL`) come from environment variables, overridable with `--embed-url`.
-- `EmbedClient` treats tunnel errors (`502`, `504`, `524`, `530`, `1033`) and connection errors or timeouts as transient: up to 3 retries with increasing backoff. `4xx` responses fail immediately.
+- `EmbedClient` treats tunnel errors (`502`, `503`, `504`, `524`, `530`; Cloudflare error `1033` arrives as HTTP `530`) and connection errors or timeouts as transient: up to 3 attempts with doubling backoff. Other non-200 responses fail immediately.
 - Cloudflare cuts requests after about 100 s (`524`). Each request has its own timeout below that, the default batch is 32 chunks, and on `524` the client halves the batch and retries.
 - A startup health check calls `/embed` with one short text and verifies a 768-dimension vector. On failure it prints: "tunnel not responding, check the Kaggle notebook and update EMBED_URL".
 - The `/rerank` endpoint and `LLM_URL` reuse the same configuration mechanism in later sub-projects.
@@ -65,9 +65,11 @@ Medical_RAG/
 
 - `segment(text: str) -> str` — `pyvi.ViTokenizer.tokenize`. The single word-segmentation function for both dense and sparse encoding, for documents and for queries. The model card of `dangvantuan/vietnamese-embedding` requires pyvi segmentation before encoding; the Kaggle server does not segment, so the client does.
 - `embed_input(chunk: dict) -> str` — the part of a chunk sent to the encoders. Default: `chunk["text"]` unchanged (the chunking spec's decision). It is a separate function because the `Nguồn: https://...` line in the injected header may be noise for the embedding; changing that later is a one-line edit.
-- `EmbedClient(base_url: str, batch_size: int = 32, timeout: float = 60.0, retries: int = 3)`
-  - `embed(segmented_texts: list[str]) -> list[list[float]]` — `POST {base_url}/embed`, batches, retries as described above, raises on a wrong vector dimension.
-  - `health_check() -> None` — raises a clear error if the tunnel is down or the dimension is not 768.
+- `DENSE_DIM = 768` is defined here (the model's property) and imported by `store.py`.
+- `EmbedError(Exception)` — raised for every embedding failure.
+- `EmbedClient(base_url: str, batch_size: int = 32, timeout: float = 60.0, retries: int = 3, backoff: float = 1.0)`
+  - `embed(segmented_texts: list[str]) -> list[list[float]]` — `POST {base_url}/embed`, batches, retries as described above (`backoff` is the first sleep in seconds, doubling; tests pass `0`), raises `EmbedError` on a wrong vector count or dimension. The client owns batching, so callers pass all of an article's texts at once.
+  - `health_check() -> None` — raises `EmbedError` with the "update EMBED_URL" message if the tunnel is down or the dimension is not 768.
 - `Bm25Encoder(k1: float = 1.2, b: float = 0.75)`
   - `fit(segmented_docs: list[str]) -> None` — computes `avgdl`; raises on an empty corpus.
   - `encode_doc(segmented: str) -> tuple[list[int], list[float]]` — `(indices, values)`.
@@ -75,14 +77,15 @@ Medical_RAG/
 
 ### `store.py`
 
-- `COLLECTION = "medical_rag"`, `DENSE_DIM = 768`.
+- `COLLECTION = "medical_rag"`; `DENSE_DIM` is imported from `encoders`.
 - `open_client(path: str | None) -> QdrantClient` — `None` means `:memory:` (used by tests).
+- `build_point(chunk: dict, dense: list[float], sparse: tuple[list[int], list[float]]) -> PointStruct` — id is `chunk["id"]`, payload is every chunk field except `id`, and the `sparse` vector is omitted when it has no indices.
 - `ensure_collection(client, recreate: bool = False) -> None` — creates the collection if missing; if it exists with a different dense size it raises and does not recreate; `recreate=True` drops and rebuilds.
 - `replace_article(client, article_type: str, article_slug: str, points: list[PointStruct]) -> None` — deletes existing points matching `type` and `article_slug`, then upserts `points`.
 
 ### `ingestion/ingest.py`
 
-- `ingest(data_dir: str, client, embedder: Callable[[list[str]], list[list[float]]], token_counter: Callable[[str], int], batch_size: int = 32) -> IngestReport`, where `IngestReport` holds `articles_ok: int`, `articles_failed: list[str]`, `points_upserted: int`. The embedder is injected so tests can pass a deterministic fake; the CLI passes `EmbedClient.embed`.
+- `ingest(data_dir: str, client, embedder: Callable[[list[str]], list[list[float]]], token_counter: Callable[[str], int]) -> IngestReport`, where `IngestReport` holds `articles_ok: int`, `articles_failed: list[str]`, `points_upserted: int`, `expected_chunks: int`. The embedder is injected so tests can pass a deterministic fake; the CLI passes `EmbedClient.embed`, which does its own batching.
 - `main()` CLI: `--data-dir` (default `data`), `--qdrant-path` (default `qdrant_data`), `--embed-url` (default `$EMBED_URL`), `--recreate`. Exit codes: `0` success; `1` at least one article failed; `2` configuration or health-check failure.
 
 ## Ingest flow
@@ -122,7 +125,9 @@ No mocks of Qdrant or HTTP.
 - `test_encoders.py`: `segment` with real pyvi (compounds joined by `_`, deterministic); BM25 weights checked against hand-computed values, longer document gets a smaller weight for equal `tf`, hash stable, NFC-equivalent inputs equal, empty input; `EmbedClient` against a **real HTTP server on localhost** in a thread simulating success, one `524` then success (batch halves), repeated `530` (raises after 3 tries), `400` (no retry), wrong dimension (raises).
 - `test_store.py`: Qdrant `:memory:` — collection creation, dense-size mismatch raises, `replace_article` replaces only that article's points, re-running does not duplicate. A rare term outranks a common term in a sparse query (proves `Modifier.IDF` works in local mode), and a hybrid `query_points` with two prefetches and RRF fusion runs.
 - `test_ingest.py`: whole flow on a temporary data directory, a deterministic 768-dimension fake embedder and `:memory:` Qdrant — point counts, payload fields, one article's embedding failing leaves the others ingested and its old points intact, exit code non-zero.
+- `test_validate_ingest.py`: the acceptance script's own logic (`check_invariants`, `max_segmented_tokens`, `smoke_retrieval`) runs offline against an in-memory Qdrant built by `ingest` with the fake embedder, so the script is verified before it ever touches Kaggle.
 - The 5 existing chunking tests and `validate_chunking` stay green after the move.
+- pytest is configured in `backend/pyproject.toml` with `pythonpath = [".", "scripts"]`, so tests and scripts import without an install and the same command works on Windows: `python -m pytest backend/tests`.
 
 ### 2. `validate_ingest.py` (acceptance; needs live Kaggle and real data)
 
@@ -142,7 +147,9 @@ All tests green; real ingest of `data/` finishes with 0 failed articles; `valida
 
 ## Risks and limitations
 
-- **Local-mode IDF support is unverified.** A grep shows local mode handles `Modifier`, `prefetch` and `SparseVector`, but no behaviour was run. The first plan task is a short spike test. Fallback if IDF is not applied: compute document frequency in `Bm25Encoder.fit` and bake IDF into the document weights on the client.
+- **Local-mode behaviour was verified by spike (2026-09-19, `qdrant-client` 1.17.1):** `Modifier.IDF` is applied (a rare term scored 1.3093 = ln(1+3.5/1.5) + ln(1+0.5/4.5), the Lucene BM25 IDF), `query_points` with two prefetches and `FusionQuery(RRF)` works, `delete` with a `FilterSelector` works, a point without a `sparse` vector is accepted, and UUID string ids are accepted. `create_payload_index` emits a `UserWarning` ("Payload indexes have no effect in the local Qdrant"); `ensure_collection` still creates the indexes (they matter after a move to a server) and suppresses that one warning.
+- **Segmentation does not push chunks over the model limit (measured):** on a 388-chunk sample, segmented token count / raw token count was 0.70-0.98 (mean 0.82) with the real tokenizer, and on the full `data/` corpus the longest segmented chunk has 363 tokens. `validate_ingest` still checks the 512 bound directly.
+- **Scale check (2026-09-19):** the full pipeline with a fake embedder over the 584 real files produced 9294 points, 0 invariant problems, in about 91 s (chunking + pyvi + BM25 + local Qdrant upserts); the embedding calls to Kaggle come on top of that.
 - **pyvi is an approximation** of the segmenter the model was trained with; embedding quality may differ slightly from the published numbers. It is the tool named in the model card and installs on Python 3.13 (a `cp313` Windows wheel exists for `python-crfsuite`).
 - **Header noise**: `Nguồn: https://youmed.vn/...` is embedded and tokenized into BM25 terms in every chunk. The URL words have very low IDF, and slug words may even help, but it is unmeasured. `embed_input` is the seam to change it.
 - **Local mode holds a file lock**: only one process can open `qdrant_data/` at a time, so ingestion and a running retrieval service cannot overlap. Moving to a server later removes this.
