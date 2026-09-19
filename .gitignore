@@ -8,3 +8,5 @@ __pycache__/
 .venv/
 venv/
 .env
+qdrant_data/
+*.egg-info/
