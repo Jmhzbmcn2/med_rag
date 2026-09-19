@@ -1,9 +1,5 @@
-import contextlib
-import json
-import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-
 import pytest
+from fake_server import fake_embed_server, ok_body
 
 from medical_rag.encoders import (
     DENSE_DIM,
@@ -93,56 +89,22 @@ def test_bm25_errors_on_empty_corpus_and_encode_before_fit():
         Bm25Encoder().encode_doc("a")
 
 
-def _ok_body(texts):
-    return {"embeddings": [[0.5] * DENSE_DIM for _ in texts]}
-
-
-@contextlib.contextmanager
-def fake_embed_server(script):
-    """script(texts, request_number) -> (status_code, json_body)"""
-    calls = []
-
-    class Handler(BaseHTTPRequestHandler):
-        def do_POST(self):
-            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-            texts = body["texts"]
-            status, payload = script(texts, len(calls))
-            calls.append(len(texts))
-            data = json.dumps(payload).encode()
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json")
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
-
-        def log_message(self, *args):
-            pass
-
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    threading.Thread(target=server.serve_forever, daemon=True).start()
-    try:
-        yield f"http://127.0.0.1:{server.server_port}", calls
-    finally:
-        server.shutdown()
-        server.server_close()
-
-
 def test_embed_client_batches_requests():
-    with fake_embed_server(lambda texts, n: (200, _ok_body(texts))) as (url, calls):
+    with fake_embed_server(lambda texts, n: (200, ok_body(texts))) as (url, calls):
         vectors = EmbedClient(url, batch_size=2).embed(["a", "b", "c", "d", "e"])
     assert len(vectors) == 5
     assert calls == [2, 2, 1]
 
 
 def test_embed_client_empty_input_makes_no_request():
-    with fake_embed_server(lambda texts, n: (200, _ok_body(texts))) as (url, calls):
+    with fake_embed_server(lambda texts, n: (200, ok_body(texts))) as (url, calls):
         assert EmbedClient(url).embed([]) == []
     assert calls == []
 
 
 def test_embed_client_halves_batch_after_gateway_timeout():
     def script(texts, n):
-        return (524, {}) if n == 0 else (200, _ok_body(texts))
+        return (524, {}) if n == 0 else (200, ok_body(texts))
 
     with fake_embed_server(script) as (url, calls):
         vectors = EmbedClient(url, batch_size=4).embed(["a", "b", "c", "d"])
@@ -152,7 +114,7 @@ def test_embed_client_halves_batch_after_gateway_timeout():
 
 def test_embed_client_keeps_halving_down_to_single_texts():
     def script(texts, n):
-        return (524, {}) if len(texts) > 1 else (200, _ok_body(texts))
+        return (524, {}) if len(texts) > 1 else (200, ok_body(texts))
 
     with fake_embed_server(script) as (url, calls):
         vectors = EmbedClient(url, batch_size=4).embed(["a", "b", "c"])
@@ -162,7 +124,7 @@ def test_embed_client_keeps_halving_down_to_single_texts():
 
 def test_embed_client_retries_transient_errors_then_succeeds():
     def script(texts, n):
-        return (530, {}) if n < 2 else (200, _ok_body(texts))
+        return (530, {}) if n < 2 else (200, ok_body(texts))
 
     with fake_embed_server(script) as (url, calls):
         vectors = EmbedClient(url, retries=3, backoff=0).embed(["a"])
@@ -196,7 +158,18 @@ def test_embed_client_retries_connection_errors_then_raises():
 
 
 def test_health_check_success_and_failure_message():
-    with fake_embed_server(lambda texts, n: (200, _ok_body(texts))) as (url, _):
+    with fake_embed_server(lambda texts, n: (200, ok_body(texts))) as (url, _):
         EmbedClient(url).health_check()
     with pytest.raises(EmbedError, match="update EMBED_URL"):
         EmbedClient("http://127.0.0.1:1", retries=1, backoff=0, timeout=2).health_check()
+
+
+def test_embed_client_rejects_invalid_url_without_retrying():
+    with pytest.raises(EmbedError, match="invalid request"):
+        EmbedClient("not-a-url", retries=3, backoff=0).embed(["a"])
+
+
+def test_embed_client_rejects_a_non_object_json_body():
+    with fake_embed_server(lambda texts, n: (200, ["not", "an", "object"])) as (url, _):
+        with pytest.raises(EmbedError, match="malformed"):
+            EmbedClient(url).embed(["a"])

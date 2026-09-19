@@ -114,6 +114,8 @@ class EmbedClient:
             except (requests.ConnectionError, requests.Timeout) as e:
                 last_error = e
                 continue
+            except requests.RequestException as e:
+                raise EmbedError(f"invalid request to {self.url}: {e}") from e
             if resp.status_code == _GATEWAY_TIMEOUT and len(batch) > 1:
                 raise _GatewayTimeout()
             if resp.status_code == _GATEWAY_TIMEOUT or resp.status_code in _TRANSIENT_STATUS:
@@ -123,9 +125,13 @@ class EmbedClient:
                 raise EmbedError(f"HTTP {resp.status_code}: {resp.text[:200]}")
             try:
                 vectors = resp.json()["embeddings"]
-            except (ValueError, KeyError) as e:
+            except (ValueError, KeyError, TypeError) as e:
                 raise EmbedError(f"malformed /embed response: {e}") from e
-            if len(vectors) != len(batch) or any(len(v) != DENSE_DIM for v in vectors):
+            if (
+                not isinstance(vectors, list)
+                or len(vectors) != len(batch)
+                or any(not isinstance(v, list) or len(v) != DENSE_DIM for v in vectors)
+            ):
                 raise EmbedError(
                     f"expected {len(batch)} vectors of dimension {DENSE_DIM} from /embed"
                 )

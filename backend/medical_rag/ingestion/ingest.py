@@ -56,7 +56,16 @@ def ingest(
             build_point(chunk, vector, encoder.encode_doc(doc))
             for chunk, vector, doc in zip(chunks, dense, segmented)
         ]
-        replace_article(client, article_type, slug, points)
+        try:
+            replace_article(client, article_type, slug, points)
+        except Exception as error:  # per-article isolation boundary
+            report.articles_failed.append(f"{article_type}/{slug}: store error: {error!r}")
+            print(
+                f"[{number}/{len(articles)}] STORE ERROR {article_type}/{slug}: {error!r}; "
+                "stopping, the local index may be inconsistent, re-run with --recreate",
+                flush=True,
+            )
+            break
         report.articles_ok += 1
         report.points_upserted += len(points)
         print(f"[{number}/{len(articles)}] {article_type}/{slug} ({len(points)} chunks)", flush=True)
@@ -83,9 +92,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"startup failed: {error}")
         return 2
 
-    tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
-    token_counter = lambda text: len(tokenizer.encode(text, add_special_tokens=False))  # noqa: E731
-    report = ingest(args.data_dir, qdrant, embed_client.embed, token_counter)
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(TOKENIZER_NAME)
+        token_counter = lambda text: len(tokenizer.encode(text, add_special_tokens=False))  # noqa: E731
+        report = ingest(args.data_dir, qdrant, embed_client.embed, token_counter)
+    except (OSError, RuntimeError, ValueError) as error:
+        print(f"ingest aborted: {error}")
+        return 2
 
     total = qdrant.count(COLLECTION, exact=True).count
     print(

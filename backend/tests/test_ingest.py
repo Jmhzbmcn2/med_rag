@@ -1,3 +1,4 @@
+from fake_server import fake_embed_server, ok_body
 from medical_rag.encoders import DENSE_DIM, EmbedError
 from medical_rag.ingestion import ingest as ingest_module
 from medical_rag.ingestion.ingest import ingest
@@ -109,3 +110,43 @@ def test_main_exits_2_when_embed_url_is_missing(monkeypatch, capsys):
 def test_main_exits_2_when_tunnel_is_unreachable(monkeypatch, capsys):
     assert ingest_module.main(["--embed-url", "http://127.0.0.1:1"]) == 2
     assert "update EMBED_URL" in capsys.readouterr().out
+
+
+def _main_args(url, data_dir, tmp_path):
+    return ["--embed-url", url, "--data-dir", str(data_dir), "--qdrant-path", str(tmp_path / "q")]
+
+
+def test_main_exits_2_when_data_dir_is_missing(tmp_path, capsys):
+    with fake_embed_server(lambda texts, n: (200, ok_body(texts))) as (url, _):
+        code = ingest_module.main(_main_args(url, tmp_path / "nowhere", tmp_path))
+    assert code == 2
+    assert "ingest aborted" in capsys.readouterr().out
+
+
+def test_main_exits_2_when_data_dir_has_no_articles(tmp_path, capsys):
+    (tmp_path / "empty").mkdir()
+    with fake_embed_server(lambda texts, n: (200, ok_body(texts))) as (url, _):
+        code = ingest_module.main(_main_args(url, tmp_path / "empty", tmp_path))
+    assert code == 2
+    assert "empty corpus" in capsys.readouterr().out
+
+
+def test_main_exits_2_on_a_url_without_scheme(tmp_path, capsys):
+    assert ingest_module.main(_main_args("not-a-url", tmp_path, tmp_path)) == 2
+    assert "update EMBED_URL" in capsys.readouterr().out
+
+
+def test_store_failure_is_recorded_and_stops_the_run(tmp_path):
+    client = _setup(tmp_path)
+
+    def picky_embedder(texts):
+        if any("FAILME" in text for text in texts):
+            return [[1.0, 0.0, 0.0, 0.0] for _ in texts]  # wrong size: Qdrant rejects the upsert
+        return fake_embedder(texts)
+
+    report = ingest(str(tmp_path), client, picky_embedder, _word_count)
+
+    assert report.articles_ok == 0
+    assert len(report.articles_failed) == 1
+    assert report.articles_failed[0].startswith("disease/benh-b")
+    assert "store error" in report.articles_failed[0]
