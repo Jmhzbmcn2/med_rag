@@ -1528,16 +1528,16 @@ In `backend/scripts/validate_ingest.py`, add above `def main`:
 FLOORS = {}  # {(type, mode): minimum chunk-level hit@5}, measured on <date>, margin 0.03
 ```
 
-and fill `FLOORS` with one entry per printed line: the printed chunk-level rate minus `0.03`, rounded down to 3 decimals (for example a printed `chunk=63.3%` gives `("drug", "dense"): 0.603`). In `main`, after the `hit@5` print loop, add:
+and fill `FLOORS` with one entry per printed line: the printed chunk-level rate minus `0.03`, rounded down to 3 decimals (for example a printed `chunk=63.3%` gives `("drug", "dense"): 0.603`). In `main`, after the `hit@5` print loop, inside the same `try` block (the loop that prints the results sits inside it since the Task 7 fix, so the new lines are indented 8 spaces, one level deeper than a statement directly in `main`), add:
 
 ```python
-    for (article_type, mode), floor in FLOORS.items():
-        if results[article_type][mode]["chunk"] < floor:
-            print(f"FAIL: {article_type} {mode} chunk hit@5 below floor {floor:.3f}")
-            problems.append("hit-rate floor")
+        for (article_type, mode), floor in FLOORS.items():
+            if results[article_type][mode]["chunk"] < floor:
+                print(f"FAIL: {article_type} {mode} chunk hit@5 below floor {floor:.3f}")
+                problems.append("hit-rate floor")
 ```
 
-Re-run Step 4: it must still exit `0`. Then run `python -m pytest backend/tests -q -W error::UserWarning` (expect `41 passed`).
+Re-run Step 4: it must still exit `0`. Then run `python -m pytest backend/tests -q` (expect `56 passed`; the count grew during implementation, `filterwarnings = error::UserWarning` is now set in `pyproject.toml`).
 
 - [ ] **Step 7: Commit**
 
