@@ -1,11 +1,15 @@
 import re
+import time
 import unicodedata
 import zlib
 from collections import Counter
 
+import requests
 from pyvi import ViTokenizer
 
 DENSE_DIM = 768
+_TRANSIENT_STATUS = {502, 503, 504, 530}  # Cloudflare error 1033 arrives as HTTP 530
+_GATEWAY_TIMEOUT = 524
 
 
 def segment(text: str) -> str:
@@ -54,3 +58,76 @@ class Bm25Encoder:
     def encode_query(self, segmented: str) -> tuple[list[int], list[float]]:
         indices = sorted({term_index(t) for t in terms(segmented)})
         return indices, [1.0] * len(indices)
+
+
+class EmbedError(Exception):
+    pass
+
+
+class _GatewayTimeout(Exception):
+    pass
+
+
+class EmbedClient:
+    def __init__(
+        self,
+        base_url: str,
+        batch_size: int = 32,
+        timeout: float = 60.0,
+        retries: int = 3,
+        backoff: float = 1.0,
+    ):
+        self.url = base_url.rstrip("/") + "/embed"
+        self.batch_size = batch_size
+        self.timeout = timeout
+        self.retries = retries
+        self.backoff = backoff
+
+    def embed(self, segmented_texts: list[str]) -> list[list[float]]:
+        vectors = []
+        i, size = 0, self.batch_size
+        while i < len(segmented_texts):
+            batch = segmented_texts[i:i + size]
+            try:
+                vectors.extend(self._post(batch))
+            except _GatewayTimeout:
+                size = max(1, len(batch) // 2)
+                continue
+            i += len(batch)
+        return vectors
+
+    def health_check(self) -> None:
+        try:
+            self.embed(["xin chào"])
+        except EmbedError as e:
+            raise EmbedError(
+                f"tunnel not responding, check the Kaggle notebook and update EMBED_URL: {e}"
+            ) from e
+
+    def _post(self, batch: list[str]) -> list[list[float]]:
+        last_error = None
+        for attempt in range(self.retries):
+            if attempt:
+                time.sleep(self.backoff * 2 ** (attempt - 1))
+            try:
+                resp = requests.post(self.url, json={"texts": batch}, timeout=self.timeout)
+            except (requests.ConnectionError, requests.Timeout) as e:
+                last_error = e
+                continue
+            if resp.status_code == _GATEWAY_TIMEOUT and len(batch) > 1:
+                raise _GatewayTimeout()
+            if resp.status_code == _GATEWAY_TIMEOUT or resp.status_code in _TRANSIENT_STATUS:
+                last_error = EmbedError(f"HTTP {resp.status_code}")
+                continue
+            if resp.status_code != 200:
+                raise EmbedError(f"HTTP {resp.status_code}: {resp.text[:200]}")
+            try:
+                vectors = resp.json()["embeddings"]
+            except (ValueError, KeyError) as e:
+                raise EmbedError(f"malformed /embed response: {e}") from e
+            if len(vectors) != len(batch) or any(len(v) != DENSE_DIM for v in vectors):
+                raise EmbedError(
+                    f"expected {len(batch)} vectors of dimension {DENSE_DIM} from /embed"
+                )
+            return vectors
+        raise EmbedError(f"gave up after {self.retries} attempts: {last_error}")
