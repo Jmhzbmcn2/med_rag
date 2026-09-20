@@ -18,7 +18,7 @@
 - Never use `dangerouslySetInnerHTML`. Model and user text render as React text so it is escaped.
 - `localStorage` key `medirag.conversations.v1`. Every `localStorage` access is inside `try/catch`. Pending messages are never saved.
 - UI copy stays English as in the template; `<html lang="vi">` as in the spec. System font stack, no `next/font`.
-- Disclaimer footer text: `⚠️ AI-generated information — not a medical diagnosis.`
+- Disclaimer text: `⚠️ AI-generated information — not a medical diagnosis.` Rendered once at the bottom of the MessageList result feed.
 - Do not modify or delete `medical_rag_ui.html` (untracked reference file).
 - Run frontend commands from `frontend/`, backend commands from `backend/`.
 - Commit messages end with the trailer `Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>` (second `-m`).
