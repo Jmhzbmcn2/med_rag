@@ -6,7 +6,7 @@ Scope: replace the vanilla `backend/medical_rag/static/index.html` with a Next.j
 
 - **Separate Next server.** `frontend/` runs on its own Node process (`next dev` / `next start`, port 3000). The browser only calls same-origin `/api/*`; `next.config.ts` `rewrites` proxy it to FastAPI. No CORS, no backend change.
 - **Multi-conversation history in `localStorage`.** The backend stays single-turn: every question is independent, history is only for viewing again.
-- **TypeScript, plain CSS, npm.** Template CSS is copied almost as is (`:root` tokens kept), split per component with CSS Modules; layout and tokens in `globals.css`. No Tailwind, no UI library.
+- **TypeScript, plain CSS, npm.** Template CSS is copied almost as is (`:root` tokens kept) into one `globals.css`. No Tailwind, no UI library.
 - **Old UI is deleted** once the new one is verified (see Cleanup).
 
 ## Architecture
@@ -18,6 +18,7 @@ frontend/
   hooks/useChat.ts          # state, API calls, persistence
   lib/api.ts                # chat(question), health()
   lib/citations.ts          # splitCitations(text, sourceCount)
+  lib/sources.ts            # passageOf (strip [Chủ đề: …] header, 300 chars), isHttpUrl
   lib/conversations.ts      # types, load/save, groupByDay, titleOf
   lib/*.test.ts             # Vitest, environment node
   next.config.ts
@@ -51,7 +52,7 @@ Next 15, App Router. `page.tsx` is a client component tree (all state is client 
 State: `conversations`, `activeId`, `selectedMessageId`, `pending`. Hydrated from `load()` in `useEffect` (not during render, to avoid an SSR mismatch).
 
 - `send(question)`: append the user message and a pending assistant message to the active conversation (create one on first send), call `chat`, then replace the pending message with the answer or an error message. The result is written to the conversation that sent it, by id, even if the user switched conversations meanwhile. Send is disabled while `pending`.
-- `newChat()`: create an empty conversation and make it active.
+- `newChat()`: clear the active conversation (draft state). The conversation is created on first send, so empty items never appear in the sidebar.
 - `select(conversationId)`, `selectMessage(messageId)`.
 
 ### Components
