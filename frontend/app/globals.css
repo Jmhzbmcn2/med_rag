@@ -166,8 +166,8 @@ input{
 .empty{font-size:13px;color:var(--muted)}
 footer{
   display:flex;align-items:center;justify-content:center;
-  border-top:1px solid var(--border);background:var(--panel);
-  color:var(--muted);font-size:12px;font-weight:500;
+  border:none;background:transparent;
+  color:var(--muted);font-size:12px;font-weight:400;
   gap:6px;
 }
 @media (max-width:980px){
