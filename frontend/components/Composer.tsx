@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Disclaimer } from "./Disclaimer";
 
 type Props = { pending: boolean; onSend: (question: string) => void };
 
@@ -16,6 +17,7 @@ export function Composer({ pending, onSend }: Props) {
 
   return (
     <div className="composer">
+      <Disclaimer />
       <div className="input-wrap">
         <input
           value={value}

@@ -1,7 +1,6 @@
 "use client";
 
 import { Composer } from "../components/Composer";
-import { Disclaimer } from "../components/Disclaimer";
 import { Header } from "../components/Header";
 import { MessageList } from "../components/MessageList";
 import { Sidebar } from "../components/Sidebar";
@@ -35,7 +34,6 @@ export default function Page() {
         </main>
         <SourcesPanel sources={chat.sources} />
       </div>
-      <Disclaimer />
     </div>
   );
 }
