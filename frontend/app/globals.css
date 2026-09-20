@@ -166,8 +166,9 @@ input{
 .empty{font-size:13px;color:var(--muted)}
 footer{
   display:flex;align-items:center;justify-content:center;
-  border-top:1px solid var(--border);background:#fff8e8;
-  color:var(--warning);font-size:12px;font-weight:700;
+  border-top:1px solid var(--border);background:var(--panel);
+  color:var(--muted);font-size:12px;font-weight:500;
+  gap:6px;
 }
 @media (max-width:980px){
   .layout{grid-template-columns:200px 1fr}
