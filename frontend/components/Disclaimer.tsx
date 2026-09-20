@@ -1,3 +1,3 @@
 export function Disclaimer() {
-  return <footer>⚠️ AI-generated information — not a medical diagnosis.</footer>;
+  return <div className="message-disclaimer">⚠️ AI-generated information — not a medical diagnosis.</div>;
 }
