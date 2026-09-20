@@ -164,11 +164,13 @@ input{
   background:#f8fafc;padding:9px;border-radius:9px;
 }
 .empty{font-size:13px;color:var(--muted)}
-.disclaimer{
-  text-align:center;
-  font-size:12px;
+.message-disclaimer{
+  margin-top:10px;
+  padding-top:8px;
+  border-top:1px solid #f0f4f8;
+  font-size:11px;
+  line-height:1.4;
   color:var(--muted);
-  margin-bottom:8px;
   user-select:none;
 }
 @media (max-width:980px){
