@@ -24,9 +24,6 @@ dev = ["pytest", "httpx"]
 [tool.setuptools.packages.find]
 include = ["medical_rag*"]
 
-[tool.setuptools.package-data]
-medical_rag = ["static/*.html"]
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = [".", "scripts"]

@@ -72,12 +72,6 @@ def test_health_reports_point_count(client):
     assert client.get("/api/health").json() == {"status": "ok", "points": 0}
 
 
-def test_index_page_is_served(client):
-    resp = client.get("/")
-    assert resp.status_code == 200
-    assert "MediRAG" in resp.text
-
-
 def test_startup_requires_embed_url(monkeypatch):
     monkeypatch.delenv("EMBED_URL", raising=False)
     with pytest.raises(RuntimeError, match="EMBED_URL"):

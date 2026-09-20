@@ -5,15 +5,12 @@ from typing import Annotated
 
 import openai
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse
 from pydantic import BaseModel, StringConstraints
 
 from medical_rag.encoders import EmbedClient, EmbedError
 from medical_rag.generation import answer
 from medical_rag.retrieval import RerankClient, Retriever
 from medical_rag.store import COLLECTION, open_client
-
-INDEX = Path(__file__).parent / "static" / "index.html"
 
 
 @asynccontextmanager
@@ -59,8 +56,3 @@ def chat(body: ChatRequest, request: Request):
 @app.get("/api/health")
 def health(request: Request):
     return {"status": "ok", "points": request.app.state.client.count(COLLECTION, exact=True).count}
-
-
-@app.get("/")
-def index():
-    return FileResponse(INDEX)
