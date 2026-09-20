@@ -19,14 +19,17 @@ MODES = ("dense", "sparse", "hybrid")
 
 
 def _first_hits(rows, article_type, slug, context):
-    """1-based rank of the first row from the right article, and of the first row holding the context."""
+    """1-based rank of the first row from the right article, of the first row holding the context, and count of matches."""
     article = chunk = None
+    chunk_matches = 0
     for rank, (row_type, row_slug, text) in enumerate(rows, 1):
         if article is None and row_type == article_type and row_slug == slug:
             article = rank
-        if chunk is None and context in normalize(text):
-            chunk = rank
-    return article, chunk
+        if context in normalize(text):
+            chunk_matches += 1
+            if chunk is None:
+                chunk = rank
+    return article, chunk, chunk_matches
 
 
 def _payload_rows(points):
@@ -35,12 +38,16 @@ def _payload_rows(points):
 
 def _summarize(records: list[tuple], k: int) -> dict:
     n = len(records)
-    articles, chunks = [r[0] for r in records], [r[1] for r in records]
+    articles = [r[0] for r in records]
+    chunks = [r[1] for r in records]
+    chunk_matches = [r[2] if len(r) > 2 else (1 if r[1] is not None else 0) for r in records]
     return {
         "n": n,
         f"article@{k}": sum(a is not None for a in articles) / n,
         "chunk@1": sum(c == 1 for c in chunks) / n,
         f"chunk@{k}": sum(c is not None for c in chunks) / n,
+        f"recall@{k}": sum(c is not None for c in chunks) / n,
+        f"precision@{k}": sum(m / k for m in chunk_matches) / n,
         "mrr": sum(1 / c for c in chunks if c) / n,
     }
 
@@ -115,12 +122,15 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     k = args.k
-    print(f"{'type':10s} {'mode':7s} {'n':>4s} {'article@' + str(k):>10s} {'chunk@1':>8s} {'chunk@' + str(k):>8s} {'mrr':>6s}")
+    print(
+        f"{'type':10s} {'mode':7s} {'n':>4s} {'recall@' + str(k):>10s} {'prec@' + str(k):>8s} "
+        f"{'chunk@1':>8s} {'article@' + str(k):>10s} {'mrr':>6s}"
+    )
     for article_type, modes in results.items():
         for mode, row in modes.items():
             print(
-                f"{article_type:10s} {mode:7s} {row['n']:4d} {row[f'article@{k}']:10.1%} "
-                f"{row['chunk@1']:8.1%} {row[f'chunk@{k}']:8.1%} {row['mrr']:6.3f}"
+                f"{article_type:10s} {mode:7s} {row['n']:4d} {row[f'recall@{k}']:10.1%} "
+                f"{row[f'precision@{k}']:8.1%} {row['chunk@1']:8.1%} {row[f'article@{k}']:10.1%} {row['mrr']:6.3f}"
             )
     return 0
 

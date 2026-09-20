@@ -29,7 +29,7 @@ def test_evaluate_reports_every_mode_per_type_and_overall(tmp_path):
         assert set(scores) == set(MODES)
         for row in scores.values():
             assert row["n"] == 1
-            assert {"article@5", "chunk@1", "chunk@5", "mrr"} <= set(row)
+            assert {"article@5", "chunk@1", "chunk@5", "recall@5", "precision@5", "mrr"} <= set(row)
             assert all(0.0 <= row[key] <= 1.0 for key in row if key != "n")
     assert results["drug"]["sparse"]["chunk@1"] == 1.0  # BM25 alone finds "Giảm đau."
     assert results["drug"]["hybrid"]["chunk@5"] == 1.0  # 5 chunks in the store, k=5
