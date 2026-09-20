@@ -10,3 +10,7 @@ venv/
 .env
 qdrant_data/
 *.egg-info/
+
+.claude/
+.superpowers/
+*.log

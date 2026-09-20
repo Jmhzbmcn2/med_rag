@@ -56,8 +56,8 @@ def ingest(
             embed_failures += 1
             if embed_failures >= MAX_CONSECUTIVE_EMBED_FAILURES:
                 print(
-                    f"embedding failed {MAX_CONSECUTIVE_EMBED_FAILURES} times in a row, the tunnel is probably down; "
-                    "re-run after restarting the notebook",
+                    f"embedding failed {MAX_CONSECUTIVE_EMBED_FAILURES} times in a row, the embed server is probably down; "
+                    "restart it and re-run",
                     flush=True,
                 )
                 break
@@ -92,7 +92,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if not args.embed_url:
-        print("EMBED_URL is not set (or pass --embed-url): copy the Cloudflare tunnel URL from the Kaggle notebook.")
+        print("EMBED_URL is not set (or pass --embed-url): e.g. http://localhost:8001 (serve_model/embed_server.py).")
         return 2
     embed_client = EmbedClient(args.embed_url)
     try:
