@@ -1,4 +1,4 @@
-from chunking import parse_article, split_sections, inject_context_header, guard_rail_split, chunk_article
+from medical_rag.ingestion.chunking import parse_article, split_sections, inject_context_header, guard_rail_split, chunk_article
 
 
 def test_parse_article_strips_metadata_lines():

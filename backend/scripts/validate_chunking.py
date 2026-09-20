@@ -4,7 +4,7 @@ import sys
 import pandas as pd
 from transformers import AutoTokenizer
 
-from chunking import chunk_article, iter_articles
+from medical_rag.ingestion.chunking import chunk_article, iter_articles
 
 MAX_TOKENS = 400
 BASELINE_HIT_RATE = {
