@@ -21,7 +21,13 @@ async def lifespan(app: FastAPI):
     embed_url = os.environ.get("EMBED_URL")
     if not embed_url:
         raise RuntimeError("EMBED_URL is not set, e.g. http://localhost:8001 (serve_model/embed_server.py)")
-    client = open_client(os.environ.get("QDRANT_PATH", "qdrant_data"))
+    qdrant_path = os.environ.get("QDRANT_PATH", "qdrant_data")
+    if not Path(qdrant_path).exists():  # open_client would silently create an empty store
+        raise RuntimeError(
+            f"QDRANT_PATH {qdrant_path!r} does not exist (relative to {Path.cwd()}); "
+            "run from the repo root or set QDRANT_PATH"
+        )
+    client = open_client(qdrant_path)
     if not client.collection_exists(COLLECTION):
         client.close()
         raise RuntimeError(f"collection {COLLECTION!r} not found; run `python -m medical_rag.ingestion.ingest` first")
