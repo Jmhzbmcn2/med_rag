@@ -17,7 +17,7 @@
 - `rewrites` proxy timeout: `experimental.proxyTimeout: 120000` (default 30 s is shorter than a slow LLM call). Client request timeout: 60 s (as in the old UI).
 - Never use `dangerouslySetInnerHTML`. Model and user text render as React text so it is escaped.
 - `localStorage` key `medirag.conversations.v1`. Every `localStorage` access is inside `try/catch`. Pending messages are never saved.
-- UI copy stays English as in the template; `<html lang="vi">` as in the spec. System font stack, no `next/font`.
+- UI copy stays English as in the template; `<html lang="vi">` as in the spec, with `suppressHydrationWarning` on `<html>` and `<body>` (browser extensions inject attributes). System font stack, no `next/font`.
 - Disclaimer text: `⚠️ AI-generated information — not a medical diagnosis.` Rendered once at the bottom of the MessageList result feed.
 - Do not modify or delete `medical_rag_ui.html` (untracked reference file).
 - Run frontend commands from `frontend/`, backend commands from `backend/`.
@@ -148,8 +148,8 @@ export const metadata: Metadata = { title: "MediRAG - Medical AI Assistant" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="vi">
-      <body>{children}</body>
+    <html lang="vi" suppressHydrationWarning>
+      <body suppressHydrationWarning>{children}</body>
     </html>
   );
 }
@@ -840,7 +840,7 @@ body{
 .app{
   height:100vh;
   display:grid;
-  grid-template-rows:64px 1fr 38px;
+  grid-template-rows:64px 1fr;
 }
 header{
   background:rgba(255,255,255,.95);
@@ -982,10 +982,13 @@ input{
   background:#f8fafc;padding:9px;border-radius:9px;
 }
 .empty{font-size:13px;color:var(--muted)}
-footer{
-  display:flex;align-items:center;justify-content:center;
-  border-top:1px solid var(--border);background:#fff8e8;
-  color:var(--warning);font-size:12px;font-weight:700;
+.message-disclaimer{
+  text-align:center;
+  font-size:12px;
+  color:var(--muted);
+  padding:12px 0 4px;
+  margin-top:4px;
+  user-select:none;
 }
 @media (max-width:980px){
   .layout{grid-template-columns:200px 1fr}
@@ -1222,6 +1225,7 @@ export function Message({ message: m, selected, onSelect }: Props) {
 
 import { useEffect, useRef } from "react";
 import type { Message as Msg } from "../lib/conversations";
+import { Disclaimer } from "./Disclaimer";
 import { Message } from "./Message";
 
 type Props = { messages: Msg[]; selectedId: string | null; onSelect: (id: string) => void };
@@ -1233,11 +1237,15 @@ export function MessageList({ messages, selectedId, onSelect }: Props) {
     box.current?.scrollTo({ top: box.current.scrollHeight });
   }, [messages]);
 
+  // One disclaimer at the end of the feed once any answer (or error) has been shown.
+  const hasAssistant = messages.some((m) => m.role === "assistant" && !m.pending);
+
   return (
     <div className="messages" ref={box}>
       {messages.map((m) => (
         <Message key={m.id} message={m} selected={m.id === selectedId} onSelect={() => onSelect(m.id)} />
       ))}
+      {hasAssistant && <Disclaimer />}
     </div>
   );
 }
@@ -1335,7 +1343,7 @@ export function SourcesPanel({ sources }: { sources: Source[] }) {
 
 ```tsx
 export function Disclaimer() {
-  return <footer>⚠️ AI-generated information — not a medical diagnosis.</footer>;
+  return <div className="message-disclaimer">⚠️ AI-generated information — not a medical diagnosis.</div>;
 }
 ```
 
@@ -1345,7 +1353,6 @@ export function Disclaimer() {
 "use client";
 
 import { Composer } from "../components/Composer";
-import { Disclaimer } from "../components/Disclaimer";
 import { Header } from "../components/Header";
 import { MessageList } from "../components/MessageList";
 import { Sidebar } from "../components/Sidebar";
@@ -1379,7 +1386,6 @@ export default function Page() {
         </main>
         <SourcesPanel sources={chat.sources} />
       </div>
-      <Disclaimer />
     </div>
   );
 }
@@ -1547,7 +1553,7 @@ git commit -m "refactor: remove the vanilla UI now that the Next.js frontend rep
 - `splitCitations`, no `dangerouslySetInnerHTML`, `pre-wrap` → Task 3, Task 5 (`.bubble`, `Message.tsx`).
 - Conversations: `titleOf`, `groupByDay`, `load`/`save` with try/catch, pending never saved → Task 4.
 - `useChat`: hydrate in `useEffect`, write result by conversation id, send disabled while pending, `newChat`, `select`, `selectMessage` → Task 5 (logic in Task 4 `startTurn`/`finishTurn`).
-- Header pill, Sidebar groups, Message click-to-select, Composer, SourcesPanel (link, badge, path, 300 chars, score only when not null), Disclaimer, responsive CSS → Task 5.
+- Header pill, Sidebar groups, Message click-to-select, Composer, SourcesPanel (link, badge, path, 300 chars, score only when not null), Disclaimer (once at the end of the message feed), `suppressHydrationWarning`, responsive CSS → Task 5.
 - Vitest for citations, conversations, api → Tasks 2 to 4. Manual E2E → Task 6.
 - Cleanup list (static page, `GET /`, `INDEX`, test, `package-data`, README) and keep `medical_rag_ui.html` → Task 7 and Global Constraints.
 - Run instructions and `API_URL` in README → Task 7.

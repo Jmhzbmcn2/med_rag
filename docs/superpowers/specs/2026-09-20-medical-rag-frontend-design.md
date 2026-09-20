@@ -62,7 +62,7 @@ State: `conversations`, `activeId`, `selectedMessageId`, `pending`. Hydrated fro
 - `MessageList` / `Message`: user and assistant rows as in the template; assistant text through `splitCitations`; pending shows a typing indicator; error shows an error bubble. Clicking an assistant message selects it. Auto-scroll to the bottom on new messages.
 - `Composer`: text input, Enter to send (with IME composing check), disabled send button while pending or when empty.
 - `SourcesPanel`: sources of the selected assistant message (default: the latest). Card: title as a link to `url` (new tab, `rel="noopener noreferrer"`), `type` badge, `section_path`, first 300 characters of `text`. The "Reranker score" row appears only when `score != null`, 2 decimals. Empty state text when there are no sources.
-- `Disclaimer`: "⚠️ AI-generated information — not a medical diagnosis." Rendered once at the bottom of the `MessageList` results feed when an assistant answer is present (rather than repeating on every message or in a full-width footer row).
+- `Disclaimer`: "⚠️ AI-generated information — not a medical diagnosis." Rendered once at the bottom of the `MessageList` results feed once any assistant message has finished (an answer or an error bubble) (rather than repeating on every message or in a full-width footer row).
 
 Responsive as in the template: ≤980 px hides the sources column, ≤700 px hides the sidebar.
 
