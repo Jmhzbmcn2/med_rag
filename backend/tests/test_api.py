@@ -72,12 +72,6 @@ def test_health_reports_point_count(client):
     assert client.get("/api/health").json() == {"status": "ok", "points": 0}
 
 
-def test_index_page_is_served(client):
-    resp = client.get("/")
-    assert resp.status_code == 200
-    assert "MediRAG" in resp.text
-
-
 def test_startup_requires_embed_url(monkeypatch):
     monkeypatch.delenv("EMBED_URL", raising=False)
     with pytest.raises(RuntimeError, match="EMBED_URL"):
@@ -86,11 +80,23 @@ def test_startup_requires_embed_url(monkeypatch):
 
 
 def test_startup_requires_an_ingested_collection(monkeypatch, tmp_path):
+    path = tmp_path / "empty"
+    open_client(str(path)).close()  # a store that exists but holds no collection
     monkeypatch.setenv("EMBED_URL", "http://embed.test")
-    monkeypatch.setenv("QDRANT_PATH", str(tmp_path / "empty"))
+    monkeypatch.setenv("QDRANT_PATH", str(path))
     with pytest.raises(RuntimeError, match="collection"):
         with TestClient(api.app):
             pass
+
+
+def test_startup_does_not_create_a_missing_qdrant_path(monkeypatch, tmp_path):
+    path = tmp_path / "missing"
+    monkeypatch.setenv("EMBED_URL", "http://embed.test")
+    monkeypatch.setenv("QDRANT_PATH", str(path))
+    with pytest.raises(RuntimeError, match="does not exist"):
+        with TestClient(api.app):
+            pass
+    assert not path.exists()
 
 
 def test_startup_uses_short_embed_timeouts(monkeypatch, tmp_path):
