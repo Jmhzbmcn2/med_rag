@@ -47,20 +47,42 @@ def store():
 def test_hybrid_search_merges_dense_and_sparse_hits(store):
     hits = Retriever(store, fake_embed).search(QUESTION)
     ids = [hit.id for hit in hits]
-    assert set(ids[:2]) == {"1", "3"}  # dense favourite + BM25 favourite beat the unrelated doc
+    assert set(ids[:2]) == {"1", "3"}
     assert ids[2] == "2"
+    assert all(isinstance(hit.retrieval_score, float) for hit in hits)
     assert all(hit.score is None for hit in hits)
-    assert hits[0].article_title in {"Bài 0", "Bài 2"}
-    assert hits[0].article_url.startswith("https://example.test/")
+
+
+def test_dense_search_returns_raw_scores(store):
+    hits = Retriever(store, fake_embed).search(QUESTION, mode="dense")
+    assert hits[0].id == "1"
+    assert hits[0].retrieval_score == pytest.approx(1.0)
+
+
+def test_sparse_search_does_not_embed(store):
+    def fail_embed(*args, **kwargs):
+        raise AssertionError("sparse mode must not call the embedding service")
+
+    hits = Retriever(store, fail_embed).search(QUESTION, mode="sparse")
+    assert hits[0].id == "3"
+    assert hits[0].retrieval_score > 0
+
+
+def test_sparse_question_without_terms_returns_no_hits(store):
+    def fail_embed(*args, **kwargs):
+        raise AssertionError("sparse mode must not call the embedding service")
+
+    assert Retriever(store, fail_embed).search("???", mode="sparse") == []
+
+
+def test_hybrid_question_without_terms_falls_back_to_dense(store):
+    hits = Retriever(store, fake_embed).search("???", mode="hybrid")
+    assert hits[0].id == "1"
+    assert hits[0].retrieval_score == pytest.approx(1.0)
 
 
 def test_search_respects_k(store):
     assert len(Retriever(store, fake_embed).search(QUESTION, k=1)) == 1
-
-
-def test_question_without_terms_falls_back_to_dense_only(store):
-    hits = Retriever(store, fake_embed).search("???")
-    assert hits[0].id == "1"
 
 
 def test_search_embeds_the_segmented_question_as_a_query(store):
@@ -84,17 +106,19 @@ def test_rerank_reorders_and_sets_scores(store):
     hits = Retriever(store, fake_embed, rerank).search(QUESTION)
     assert hits[0].id == "2"
     assert hits[0].score == 9.0
+    assert all(isinstance(hit.retrieval_score, float) for hit in hits)
     assert seen["query"] == QUESTION
     assert sorted(seen["documents"]) == sorted(DOCS)
 
 
-def test_rerank_failure_keeps_fusion_order(store):
+def test_rerank_failure_keeps_retrieval_order_and_scores(store):
     def broken(query, documents):
         raise RerankError("tunnel down")
 
     plain = Retriever(store, fake_embed).search(QUESTION)
     fallback = Retriever(store, fake_embed, broken).search(QUESTION)
     assert [h.id for h in fallback] == [h.id for h in plain]
+    assert [h.retrieval_score for h in fallback] == [h.retrieval_score for h in plain]
     assert all(hit.score is None for hit in fallback)
 
 

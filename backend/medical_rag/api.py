@@ -5,11 +5,11 @@ from typing import Annotated
 
 import openai
 from fastapi import FastAPI, HTTPException, Request
-from pydantic import BaseModel, StringConstraints
+from pydantic import BaseModel, Field, StringConstraints
 
 from medical_rag.encoders import EmbedClient, EmbedError
 from medical_rag.generation import answer
-from medical_rag.retrieval import RerankClient, Retriever
+from medical_rag.retrieval import RerankClient, Retriever, SearchMode
 from medical_rag.store import COLLECTION, open_client
 
 
@@ -43,6 +43,11 @@ class ChatRequest(BaseModel):
     question: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=1000)]
 
 
+class RetrievalRequest(ChatRequest):
+    mode: SearchMode = "hybrid"
+    k: Annotated[int, Field(strict=True, ge=1, le=20)] = 10
+
+
 @app.post("/api/chat")
 def chat(body: ChatRequest, request: Request):
     try:
@@ -51,6 +56,30 @@ def chat(body: ChatRequest, request: Request):
         raise HTTPException(502, f"embedding service error: {error}") from error
     except (RuntimeError, openai.OpenAIError) as error:
         raise HTTPException(502, f"LLM error: {error}") from error
+
+
+@app.post("/api/retrieve")
+def retrieve(body: RetrievalRequest, request: Request):
+    try:
+        hits = request.app.state.retriever.search(body.question, k=body.k, mode=body.mode)
+    except EmbedError as error:
+        raise HTTPException(502, f"embedding service error: {error}") from error
+    return {
+        "mode": body.mode,
+        "hits": [
+            {
+                "id": hit.id,
+                "text": hit.text,
+                "type": hit.type,
+                "article_title": hit.article_title,
+                "article_url": hit.article_url,
+                "section_path": hit.section_path,
+                "retrieval_score": hit.retrieval_score,
+                "rerank_score": hit.score,
+            }
+            for hit in hits
+        ],
+    }
 
 
 @app.get("/api/health")

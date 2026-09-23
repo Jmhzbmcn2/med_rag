@@ -11,6 +11,7 @@ def _hit(i, score=None):
         article_title=f"Bài {i}",
         article_url=f"https://example.test/{i}",
         section_path=f"Mục {i}",
+        retrieval_score=0.25,
         score=score,
     )
 

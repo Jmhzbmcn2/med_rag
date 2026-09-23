@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Literal
 
 import requests
 from qdrant_client import models
@@ -10,6 +10,8 @@ from medical_rag.store import COLLECTION
 
 CANDIDATES = 20
 log = logging.getLogger(__name__)
+
+SearchMode = Literal["dense", "sparse", "hybrid"]
 
 
 class RerankError(Exception):
@@ -45,6 +47,7 @@ class Hit:
     article_title: str
     article_url: str
     section_path: str
+    retrieval_score: float
     score: float | None = None
 
 
@@ -57,6 +60,7 @@ def _hit(point) -> Hit:
         article_title=p["article_title"],
         article_url=p["article_url"],
         section_path=p["section_path"],
+        retrieval_score=float(point.score),
     )
 
 
@@ -72,27 +76,55 @@ class Retriever:
         self.rerank = rerank
         self._bm25 = Bm25Encoder()  # queries need no fit()
 
-    def search(self, question: str, k: int = 5) -> list[Hit]:
+    def search(self, question: str, k: int = 5, mode: SearchMode = "hybrid") -> list[Hit]:
         segmented = segment(question)
-        dense = self.embed([segmented], task="query")[0]
-        indices, values = self._bm25.encode_query(segmented)
-        prefetch = [models.Prefetch(query=dense, using="dense", limit=CANDIDATES)]
-        if indices:
-            sparse = models.SparseVector(indices=indices, values=values)
-            prefetch.append(models.Prefetch(query=sparse, using="sparse", limit=CANDIDATES))
-        points = self.client.query_points(
-            COLLECTION,
-            prefetch=prefetch,
-            query=models.FusionQuery(fusion=models.Fusion.RRF),
-            limit=CANDIDATES if self.rerank else k,
-            with_payload=True,
-        ).points
+        limit = CANDIDATES if self.rerank else k
+
+        if mode in ("dense", "hybrid"):
+            dense = self.embed([segmented], task="query")[0]
+
+        if mode == "dense":
+            points = self.client.query_points(
+                COLLECTION, query=dense, using="dense", limit=limit, with_payload=True
+            ).points
+        else:
+            indices, values = self._bm25.encode_query(segmented)
+            if mode == "sparse":
+                if not indices:
+                    return []
+                points = self.client.query_points(
+                    COLLECTION,
+                    query=models.SparseVector(indices=indices, values=values),
+                    using="sparse",
+                    limit=limit,
+                    with_payload=True,
+                ).points
+            elif not indices:
+                points = self.client.query_points(
+                    COLLECTION, query=dense, using="dense", limit=limit, with_payload=True
+                ).points
+            else:
+                points = self.client.query_points(
+                    COLLECTION,
+                    prefetch=[
+                        models.Prefetch(query=dense, using="dense", limit=CANDIDATES),
+                        models.Prefetch(
+                            query=models.SparseVector(indices=indices, values=values),
+                            using="sparse",
+                            limit=CANDIDATES,
+                        ),
+                    ],
+                    query=models.FusionQuery(fusion=models.Fusion.RRF),
+                    limit=limit,
+                    with_payload=True,
+                ).points
+
         hits = [_hit(point) for point in points]
         if self.rerank and hits:
             try:
                 scores = self.rerank(question, [hit.text for hit in hits])
             except RerankError as error:
-                log.warning("rerank failed, keeping fusion order: %s", error)
+                log.warning("rerank failed, keeping retrieval order: %s", error)
                 return hits[:k]
             for hit, score in zip(hits, scores):
                 hit.score = score

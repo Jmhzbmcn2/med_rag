@@ -10,7 +10,22 @@ export type Source = {
 
 export type ChatResponse = { answer: string; sources: Source[] };
 
-const CHAT_TIMEOUT_MS = 60_000;
+export type RetrievalMode = "dense" | "sparse" | "hybrid";
+
+export type RetrievalHit = {
+  id: string;
+  text: string;
+  type: string;
+  article_title: string;
+  article_url: string;
+  section_path: string;
+  retrieval_score: number;
+  rerank_score: number | null;
+};
+
+export type RetrievalResponse = { mode: RetrievalMode; hits: RetrievalHit[] };
+
+const REQUEST_TIMEOUT_MS = 60_000;
 
 export async function chat(question: string): Promise<ChatResponse> {
   let res: Response;
@@ -19,7 +34,7 @@ export async function chat(question: string): Promise<ChatResponse> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question }),
-      signal: AbortSignal.timeout(CHAT_TIMEOUT_MS),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (err) {
     if (err instanceof Error && err.name === "TimeoutError") throw new Error("Request timed out");
@@ -30,6 +45,26 @@ export async function chat(question: string): Promise<ChatResponse> {
     throw new Error(typeof data.detail === "string" ? data.detail : `Request failed (${res.status})`);
   }
   return data as ChatResponse;
+}
+
+export async function retrieve(question: string, mode: RetrievalMode): Promise<RetrievalResponse> {
+  let res: Response;
+  try {
+    res = await fetch("/api/retrieve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, mode, k: 10 }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === "TimeoutError") throw new Error("Request timed out");
+    throw err;
+  }
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(typeof data.detail === "string" ? data.detail : `Request failed (${res.status})`);
+  }
+  return data as RetrievalResponse;
 }
 
 export async function health(): Promise<{ points: number } | null> {

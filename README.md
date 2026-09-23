@@ -54,6 +54,7 @@ Qdrant runs in local mode and holds a file lock, so only one process can open `q
 | Route | Description |
 |---|---|
 | `POST /api/chat` | `{"question": "..."}` (1-1000 chars) returns `{"answer", "sources": [{n, title, url, section_path, type, text, score}]}`. `score` is `null` without a reranker. Embed or LLM failures return 502. |
+| `POST /api/retrieve` | `{"question": "...", "mode": "dense|sparse|hybrid", "k": 10}` returns ranked chunks with separate `retrieval_score` and `rerank_score` |
 | `GET /api/health` | `{"status": "ok", "points": <chunks in the index>}` |
 
 ## Configuration

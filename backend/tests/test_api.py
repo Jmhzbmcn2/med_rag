@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -13,6 +15,7 @@ HIT = Hit(
     article_title="Bài 1",
     article_url="https://example.test/1",
     section_path="Mục",
+    retrieval_score=0.25,
 )
 
 
@@ -20,8 +23,10 @@ class FakeRetriever:
     def __init__(self, hits=None, error=None):
         self.hits = [HIT] if hits is None else hits
         self.error = error
+        self.calls = []
 
-    def search(self, question, k=5):
+    def search(self, question, k=5, mode="hybrid"):
+        self.calls.append((question, k, mode))
         if self.error:
             raise self.error
         return self.hits
@@ -66,6 +71,63 @@ def test_chat_maps_llm_failure_to_502(client, monkeypatch):
     resp = client.post("/api/chat", json={"question": "q"})
     assert resp.status_code == 502
     assert "OPENROUTER_API_KEY" in resp.json()["detail"]
+
+
+def test_retrieve_returns_scores_and_forwards_options(client):
+    retriever = FakeRetriever(hits=[replace(HIT, score=0.75)])
+    api.app.state.retriever = retriever
+
+    resp = client.post(
+        "/api/retrieve",
+        json={"question": "  đau đầu?  ", "mode": "dense", "k": 7},
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "mode": "dense",
+        "hits": [
+            {
+                "id": "1",
+                "text": "Nội dung.",
+                "type": "disease",
+                "article_title": "Bài 1",
+                "article_url": "https://example.test/1",
+                "section_path": "Mục",
+                "retrieval_score": 0.25,
+                "rerank_score": 0.75,
+            }
+        ],
+    }
+    assert retriever.calls == [("đau đầu?", 7, "dense")]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"question": "", "mode": "hybrid", "k": 10},
+        {"question": "q", "mode": "other", "k": 10},
+        {"question": "q", "mode": "dense", "k": 0},
+        {"question": "q", "mode": "dense", "k": 21},
+        {"question": "q", "mode": "dense", "k": True},
+        {"question": "q", "mode": "dense", "k": "10"},
+    ],
+)
+def test_retrieve_rejects_invalid_requests(client, payload):
+    assert client.post("/api/retrieve", json=payload).status_code == 422
+
+
+def test_retrieve_defaults_to_hybrid_and_ten_hits(client):
+    retriever = FakeRetriever()
+    api.app.state.retriever = retriever
+    assert client.post("/api/retrieve", json={"question": "q"}).status_code == 200
+    assert retriever.calls == [("q", 10, "hybrid")]
+
+
+def test_retrieve_maps_embed_failure_to_502(client):
+    api.app.state.retriever = FakeRetriever(error=EmbedError("down"))
+    resp = client.post("/api/retrieve", json={"question": "q"})
+    assert resp.status_code == 502
+    assert "down" in resp.json()["detail"]
 
 
 def test_health_reports_point_count(client):

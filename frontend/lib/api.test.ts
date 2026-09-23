@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { chat, health } from "./api";
+import { chat, health, retrieve } from "./api";
 
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -60,5 +60,49 @@ describe("health", () => {
   it("returns null on a network failure", async () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
     expect(await health()).toBeNull();
+  });
+});
+
+describe("retrieve", () => {
+  it("posts the selected mode and fixed result count", async () => {
+    const payload = {
+      mode: "sparse",
+      hits: [
+        {
+          id: "1",
+          text: "Nội dung",
+          type: "disease",
+          article_title: "Bài 1",
+          article_url: "https://example.test/1",
+          section_path: "Mục",
+          retrieval_score: 1.25,
+          rerank_score: null,
+        },
+      ],
+    };
+    const fetchMock = vi.fn().mockResolvedValue(json(payload));
+    vi.stubGlobal("fetch", fetchMock);
+
+    expect(await retrieve("đau đầu?", "sparse")).toEqual(payload);
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/retrieve");
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ question: "đau đầu?", mode: "sparse", k: 10 });
+  });
+
+  it("uses a backend detail error", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({ detail: "embedding service error: down" }, 502)));
+    await expect(retrieve("q", "dense")).rejects.toThrow("embedding service error: down");
+  });
+
+  it("uses a generic error for a non-string detail", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(json({ detail: [] }, 422)));
+    await expect(retrieve("q", "hybrid")).rejects.toThrow("Request failed (422)");
+  });
+
+  it("maps a timeout to a readable message", async () => {
+    const timeout = Object.assign(new Error("timed out"), { name: "TimeoutError" });
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(timeout));
+    await expect(retrieve("q", "hybrid")).rejects.toThrow("Request timed out");
   });
 });
