@@ -11,10 +11,20 @@ DEFAULT_MODEL = "google/gemini-2.5-flash"
 
 
 def chat(messages: list[dict], model: str | None = None, **kwargs) -> str:
+    base_url = kwargs.pop("base_url", None) or os.environ.get("LLM_BASE_URL")
     model_name = model or os.environ.get("LLM_MODEL", DEFAULT_MODEL)
     groq_key = os.environ.get("GROQ_API_KEY")
     openrouter_key = os.environ.get("OPENROUTER_API_KEY")
     provider = os.environ.get("LLM_PROVIDER", "").lower()
+
+    if base_url:
+        api_key = os.environ.get("LLM_API_KEY") or "EMPTY"
+        client = OpenAI(base_url=base_url, api_key=api_key, timeout=kwargs.pop("timeout", 60))
+        resp = client.chat.completions.create(model=model_name, messages=messages, **kwargs)
+        choice = resp.choices[0] if resp.choices else None
+        if choice is None or choice.message.content is None:
+            raise RuntimeError(f"empty completion from {model_name}")
+        return choice.message.content
 
     # Determine whether to target Groq:
     is_groq_target = provider == "groq" or (
@@ -30,6 +40,7 @@ def chat(messages: list[dict], model: str | None = None, **kwargs) -> str:
         if not groq_key:
             raise RuntimeError("GROQ_API_KEY is not set")
         client = OpenAI(base_url=GROQ_URL, api_key=groq_key, timeout=60)
+        kwargs.setdefault("max_tokens", 800)
         try:
             resp = client.chat.completions.create(model=model_name, messages=messages, **kwargs)
         except NotFoundError as err:
